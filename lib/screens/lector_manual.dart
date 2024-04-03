@@ -9,7 +9,6 @@ import 'dart:io';
 import 'package:http/io_client.dart';
 import 'dart:convert';
 import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:proyecto_qr/screens/sesion.dart';
 
 class InputPage extends StatefulWidget {
   const InputPage({super.key});
@@ -96,7 +95,7 @@ class _InputPageState extends State<InputPage> {
           toolbarHeight: 80,
           title: Center(
             child: Image.asset(
-              'assets/logo_ipl_negro.png',
+              'assets/logo ipl_BLANCO.png',
               width: 70,
               height: 70,
             ),

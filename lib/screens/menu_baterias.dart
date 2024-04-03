@@ -4,7 +4,6 @@ import 'package:proyecto_qr/screens/escoger.dart';
 import 'package:proyecto_qr/screens/informacion_baterias.dart';
 import 'package:proyecto_qr/screens/llamadas_servicio_baterias.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:proyecto_qr/screens/sesion.dart';
 
 class menuBaterias extends StatefulWidget {
   const menuBaterias({super.key});
@@ -31,7 +30,7 @@ class _menuBateriasState extends State<menuBaterias> {
           toolbarHeight: 80,
           title: Center(
             child: Image.asset(
-              'assets/logo_ipl_negro.png',
+              'assets/logo ipl_BLANCO.png',
               width: 70,
               height: 70,
             ),

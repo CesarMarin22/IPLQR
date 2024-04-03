@@ -6,93 +6,122 @@ import 'dart:io';
 import 'package:http/io_client.dart';
 import 'dart:async';
 import 'package:fluttertoast/fluttertoast.dart';
-
+import 'package:proyecto_qr/screens/escoger.dart';
 import '../screens/sesion.dart';
+import 'package:http/http.dart' as http;
 
 class AuthProvider with ChangeNotifier {
-  final List<User> _localUsers = [
-    User('admin', '12345'),
-    User('usuario', '12345'),
-    // Agrega más usuarios aquí
-  ];
-
   String _sessionCookie = '';
   String _routeIdCookie = '';
   String _authToken = '';
   User? _authenticatedUser;
+  int? _userProfileId;
   Timer? _sessionTimer;
   DateTime? _sessionStartTime;
-  int _sessionTimeoutMinutes = 5; // Tiempo de sesión en minutos
+  int _sessionTimeoutMinutes = 30; // Tiempo de sesión en minutos
 
+  int? get userProfileId => _userProfileId;
   String get sessionCookie => _sessionCookie;
   String get routeIdCookie => _routeIdCookie;
   String get authToken => _authToken;
   User? get authenticatedUser => _authenticatedUser;
   DateTime? get sessionStartTime => _sessionStartTime;
   int get sessionTimeoutMinutes => _sessionTimeoutMinutes;
+  static const apiUri = 'http://20.97.20.115:85/api/Usuarios';
 
   Future<void> login(
       String username, String password, BuildContext context) async {
-    final localUser = _localUsers.firstWhere(
-      (user) => user.username == username,
-      orElse: () => User('', ''),
-    );
+    final response = await http.get(Uri.parse(apiUri));
+    if (response.statusCode == 200) {
+      final List<dynamic> usuarios = json.decode(response.body);
+      final usuario = usuarios.firstWhere(
+        (user) => user['usuario'] == username && user['pwd'] == password,
+        orElse: () => null,
+      );
+      print(usuario);
+      if (usuario == null) {
+        throw UserNotFoundException('Usuario Incorrecto');
+      }
 
-    if (localUser.username.isEmpty) {
-      throw UserNotFoundException('Usuario Incorrecto');
-    }
+      if (usuario['activo'] != 1) {
+        throw UserNotActiveException('El usuario no está activo');
+      }
 
-    if (localUser.password != password) {
-      throw InvalidCredentialsException('Contraseña Incorrecta');
-    }
+      setUserProfileId(usuario['idPerfil']);
 
-    // Realiza una solicitud de inicio de sesión a la API
-    const apiLoginUrl = 'https://52.152.107.200:50000/b1s/v1/Login';
-    final requestData = {
-      "UserName": "manager",
-      "Password": "yottak01",
-      "CompanyDB": "B1_IPL"
-    };
-
-    // Configura un cliente HTTP personalizado para aceptar certificados autofirmados
-    final client = HttpClient()
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) {
-        return true; // Permite certificados autofirmados
+      // Realiza una solicitud de inicio de sesión a la API
+      const apiLoginUrl = 'https://52.152.107.200:50000/b1s/v1/Login';
+      final requestData = {
+        "UserName": "manager",
+        "Password": "yottak01",
+        "CompanyDB": "B1_IPL"
       };
 
-    // Crea un cliente IOClient con el cliente personalizado
-    final ioClient = IOClient(client);
+      // Configura un cliente HTTP personalizado para aceptar certificados autofirmados
+      final client = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) {
+          return true; // Permite certificados autofirmados
+        };
 
-    try {
-      final loginResponse = await ioClient.post(
-        Uri.parse(apiLoginUrl),
-        headers: {"Content-Type": "application/json"},
-        body: json.encode(requestData),
-      );
+      // Crea un cliente IOClient con el cliente personalizado
+      final ioClient = IOClient(client);
 
-      if (loginResponse.statusCode == 200) {
-        final jsonResponse = json.decode(loginResponse.body);
-        _authToken = jsonResponse['SessionId'];
-        final cookies = loginResponse.headers['set-cookie'];
-        final cookiesMap = parseCookies(cookies);
-        _sessionCookie = cookiesMap['B1SESSION']!;
-        _routeIdCookie = cookiesMap['ROUTEID']!;
-        _authenticatedUser = localUser;
-        resetSession();
+      try {
+        final loginResponse = await ioClient.post(
+          Uri.parse(apiLoginUrl),
+          headers: {"Content-Type": "application/json"},
+          body: json.encode(requestData),
+        );
 
-        // Iniciar el temporizador de sesión al iniciar sesión
+        if (loginResponse.statusCode == 200) {
+          final jsonResponse = json.decode(loginResponse.body);
+          _authToken = jsonResponse['SessionId'];
+          final cookies = loginResponse.headers['set-cookie'];
+          final cookiesMap = parseCookies(cookies);
+          _sessionCookie = cookiesMap['B1SESSION']!;
+          _routeIdCookie = cookiesMap['ROUTEID']!;
+          resetSession();
 
-        if (context != null) {
-          _startSessionTimer(context);
+          // Iniciar el temporizador de sesión al iniciar sesión
+
+          if (context != null) {
+            _startSessionTimer(context);
+          }
+
+          // Verificar el tipo de perfil y redirigir según corresponda
+          switch (usuario['idPerfil']) {
+            case 1: // Administrador
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => eleccion()),
+              );
+              break;
+            case 2: // Usuario
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => eleccion()),
+              );
+              break;
+            case 3: // Consulta
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => eleccion()),
+              );
+              break;
+            default:
+              // Perfil desconocido, manejar según sea necesario
+              break;
+          }
+          notifyListeners();
+        } else {
+          throw Exception("Error en la respuesta de la API");
         }
-        notifyListeners();
-      } else {
-        throw Exception("Error en la respuesta de la API");
+      } catch (e) {
+        print('Error: $e');
+        ioClient.close();
+        throw Exception('Error en la solicitud a la API');
       }
-    } catch (e) {
-      print('Error: $e');
-      ioClient.close();
-      throw Exception('Error en la solicitud a la API');
     }
   }
 
@@ -255,6 +284,11 @@ class AuthProvider with ChangeNotifier {
           context, MaterialPageRoute(builder: (context) => LoginScreen()));
     }
   }
+
+  void setUserProfileId(int id) {
+    _userProfileId = id; // Método para establecer el valor del idPerfil
+    notifyListeners(); // Notificar a los escuchadores del cambio
+  }
 }
 
 class UserNotFoundException implements Exception {
@@ -267,4 +301,10 @@ class InvalidCredentialsException implements Exception {
   final String message;
 
   InvalidCredentialsException(this.message);
+}
+
+class UserNotActiveException implements Exception {
+  final String message;
+
+  UserNotActiveException(this.message);
 }

@@ -6,7 +6,6 @@ import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:proyecto_qr/screens/llamadas_servicio_equipos.dart';
 import 'package:proyecto_qr/screens/reporte_instalacion.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:proyecto_qr/screens/sesion.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
 
 class menuEquipos extends StatefulWidget {
@@ -34,7 +33,7 @@ class _menuEquipos extends State<menuEquipos> {
           toolbarHeight: 80,
           title: Center(
             child: Image.asset(
-              'assets/logo_ipl_negro.png',
+              'assets/logo ipl_BLANCO.png',
               width: 70,
               height: 70,
             ),

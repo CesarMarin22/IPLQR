@@ -87,7 +87,7 @@ class _LlamadaServiciosCargadoresState
         toolbarHeight: 80,
         title: Center(
           child: Image.asset(
-            'assets/logo_ipl_negro.png',
+            'assets/logo ipl_BLANCO.png',
             width: 70,
             height: 70,
           ),

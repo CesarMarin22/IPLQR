@@ -57,6 +57,8 @@ dependencies:
   fl_chart: ^0.40.0
   shared_preferences: ^2.2.2
   fluttertoast: ^8.2.4
+  get: ^4.6.6
+
   
   
 
@@ -84,6 +86,7 @@ flutter:
      - assets/diagrama_de _flujo_Middleware_ZKW.pdf
      - assets/1.pdf
      - assets/cargando_imagen.riv
+     - assets/logo ipl_BLANCO.png
 
 flutter_icons:
   android: true

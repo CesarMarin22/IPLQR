@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/screens/escoger.dart';
 import 'package:proyecto_qr/screens/informacion_cargadores.dart';
 import 'package:proyecto_qr/screens/llamadas_servicio_cargadores.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:proyecto_qr/screens/sesion.dart';
 
 class menuCargadores extends StatefulWidget {
   const menuCargadores({super.key});
@@ -32,7 +30,7 @@ class _menuCargadoresState extends State<menuCargadores> {
           toolbarHeight: 80,
           title: Center(
             child: Image.asset(
-              'assets/logo_ipl_negro.png',
+              'assets/logo ipl_BLANCO.png',
               width: 70,
               height: 70,
             ),

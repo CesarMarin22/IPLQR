@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:proyecto_qr/screens/admin_usuarios.dart';
 import 'package:proyecto_qr/screens/lector_qr.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
 import 'lector_manual.dart';
@@ -27,6 +28,7 @@ class _eleccion extends State<eleccion> {
     sessionCookie = authProvider.sessionCookie;
     routeIdCookie = authProvider.routeIdCookie;
     authToken = authProvider.authToken;
+    final userProfileId = authProvider.userProfileId;
     return Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -34,7 +36,7 @@ class _eleccion extends State<eleccion> {
           toolbarHeight: 80,
           title: Center(
             child: Image.asset(
-              'assets/logo_ipl_negro.png',
+              'assets/logo ipl_BLANCO.png',
               width: 70,
               height: 70,
             ),
@@ -88,7 +90,7 @@ class _eleccion extends State<eleccion> {
               ///
               ////////////////espaciado entre botones///////////////////////////////////////////////////
               const SizedBox(
-                height: 65,
+                height: 40,
               ),
 
 ////////////////////termino Espaciado entre botones////////////////////////////////////
@@ -115,11 +117,45 @@ class _eleccion extends State<eleccion> {
                               const BorderSide(color: Colors.black, width: 5))),
                   child: const Text(
                     'INGRESAR ARTICULO MANUALMENTE',
-                    style: TextStyle(fontSize: 20, color: Colors.black),
+                    style: TextStyle(fontSize: 15, color: Colors.black),
                     textAlign: TextAlign.center,
                   ),
                 ),
               ),
+
+              const SizedBox(
+                height: 40,
+              ),
+
+///////////////////////fin boton historial de servicios/////////////////////////////
+//////////////////boton historia de servicios//////////////////////////////////////////////
+              if (userProfileId == 1)
+                SizedBox(
+                  width: 200,
+                  height: 60,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const AdminUsuarios()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: const BorderSide(
+                                color: Colors.black, width: 5))),
+                    child: const Text(
+                      'ADMIN USUARIOS',
+                      style: TextStyle(fontSize: 20, color: Colors.black),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
 ///////////////////////fin boton historial de servicios/////////////////////////////
 ////////////////////////////Termino boton Reporte de instalacion/////////////////////////
               ////////////////espaciado entre botones///////////////////////////////////////////////////
