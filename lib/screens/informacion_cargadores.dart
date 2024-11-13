@@ -251,7 +251,7 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/Items?'
+      'https://10.2.0.6:50000/b1s/v1/Items?'
       '\$select=U_MarcaC,U_ModeloCargador,ForeignName,U_SalidaVoltaje,U_Amperaje,User_Text&'
       '\$filter=(ItemsGroupCode eq 437 or AssetGroup eq \'CAR\') and ForeignName eq \'$numSerie\'',
     );

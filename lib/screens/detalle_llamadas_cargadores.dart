@@ -59,7 +59,7 @@ class _DetallesLlamadaServicioBateriasState
     final ioClient = IOClient(client);
     print(ot);
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
+      'https://10.2.0.6:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
       '\$expand=ServiceCalls(\$select=Subject,U_PersonWhoReports,Resolution),'
       'ServiceCallTypes(\$select=Name),'
       'EmployeesInfo(\$select=FirstName,LastName)&'

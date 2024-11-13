@@ -218,7 +218,7 @@ class _InputPageState extends State<InputPage> {
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/\$crossjoin(Items,ItemGroups)?'
+      'https://10.2.0.6:50000/b1s/v1/\$crossjoin(Items,ItemGroups)?'
       '\$expand=Items(\$select=AssetGroup),'
       'ItemGroups(\$select=GroupName)&'
       '\$filter=Items/ItemsGroupCode eq ItemGroups/Number and Items/ForeignName eq  \'$serie\'',

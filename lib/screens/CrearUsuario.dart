@@ -34,7 +34,7 @@ class _crearUsuarioState extends State<crearUsuario> {
 
   Future<void> obtenerPerfiles() async {
     http.Response response =
-        await http.get(Uri.parse('http://20.97.20.115:8081/api/perfiles'));
+        await http.get(Uri.parse('http://10.2.0.7:8081/api/perfiles'));
     if (response.statusCode == 200) {
       setState(() {
         perfiles = jsonDecode(response.body);
@@ -46,7 +46,7 @@ class _crearUsuarioState extends State<crearUsuario> {
 
   Future<void> obtenerSocios() async {
     http.Response response =
-        await http.get(Uri.parse('http://20.97.20.115:8081/api/socios'));
+        await http.get(Uri.parse('http://10.2.0.7:8081/api/socios'));
     if (response.statusCode == 200) {
       setState(() {
         socios = jsonDecode(response.body);
@@ -67,7 +67,7 @@ class _crearUsuarioState extends State<crearUsuario> {
 
     // Realizar la solicitud POST para agregar el usuario
     http.Response response = await http.post(
-      Uri.parse('http://20.97.20.115:8081/api/usuarios'),
+      Uri.parse('http://10.2.0.7:8081/api/usuarios'),
       body: jsonEncode(body),
       headers: {'Content-Type': 'application/json'},
     );

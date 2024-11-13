@@ -126,7 +126,7 @@ class _DetalleUsuarioScreenState extends State<DetalleUsuarioScreen> {
 
     try {
       final response = await http.put(
-        Uri.parse('http://20.97.20.115:8081/api/usuarios/$idUsuario'),
+        Uri.parse('http://10.2.0.7:8081/api/usuarios/$idUsuario'),
         body: jsonEncode(body),
         headers: {'Content-Type': 'application/json'},
       );
@@ -158,7 +158,7 @@ class _DetalleUsuarioScreenState extends State<DetalleUsuarioScreen> {
   Future<void> eliminarUsuario() async {
     try {
       final response = await http.delete(
-        Uri.parse('http://20.97.20.115:8081/api/usuarios/${widget.user['ID']}'),
+        Uri.parse('http://10.2.0.7:8081/api/usuarios/${widget.user['ID']}'),
       );
 
       if (response.statusCode == 200) {

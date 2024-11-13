@@ -263,7 +263,7 @@ class _InformacionBateriasState extends State<InformacionBaterias> {
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/Items?'
+      'https://10.2.0.6:50000/b1s/v1/Items?'
       '\$select=U_MarcaB,U_ModeloBat,ForeignName,U_VoltajeB,U_CapacidadB,U_TipoB,User_Text&'
       '\$filter=(ItemsGroupCode eq 430 or AssetGroup eq \'BAT\') and ForeignName eq \'$numSerie\'',
     );

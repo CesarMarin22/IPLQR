@@ -243,7 +243,7 @@ class _eleccion extends State<eleccion> {
 
     final ioClient = IOClient(client);
 
-    final url = Uri.parse('https://52.152.107.200:50000/b1s/v1/Logout');
+    final url = Uri.parse('https://10.2.0.6:50000/b1s/v1/Logout');
 
     try {
       final response = await ioClient.get(

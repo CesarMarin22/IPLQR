@@ -27,7 +27,7 @@ class AuthProvider with ChangeNotifier {
   User? get authenticatedUser => _authenticatedUser;
   DateTime? get sessionStartTime => _sessionStartTime;
   int get sessionTimeoutMinutes => _sessionTimeoutMinutes;
-  static const apiUri = 'http://20.97.20.115:8081/api/usuarios';
+  static const apiUri = 'http://10.2.0.7:8081/api/usuarios';
 
   Future<void> login(
       String username, String password, BuildContext context) async {
@@ -50,7 +50,7 @@ class AuthProvider with ChangeNotifier {
       setUserProfileId(usuario['PERFIL']);
 
       // Realiza una solicitud de inicio de sesión a la API
-      const apiLoginUrl = 'https://52.152.107.200:50000/b1s/v1/Login';
+      const apiLoginUrl = 'https://10.2.0.6:50000/b1s/v1/Login';
       final requestData = {
         "UserName": "manager",
         "Password": "yottak01",
@@ -204,7 +204,7 @@ class AuthProvider with ChangeNotifier {
 
     final ioClient = IOClient(client);
 
-    final url = Uri.parse('https://52.152.107.200:50000/b1s/v1/Logout');
+    final url = Uri.parse('https://10.2.0.6:50000/b1s/v1/Logout');
 
     try {
       final response = await ioClient.get(

@@ -348,7 +348,7 @@ class _LlamadaServiciosCargadoresState
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes)?'
+      'https://10.2.0.6:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes)?'
       '\$expand=ServiceCalls(\$select=ServiceCallID, Subject, CreationDate),'
       'ServiceCallTypes(\$select=Name)&'
       '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and ServiceCalls/ManufacturerSerialNum eq \'$numSerie\'&'

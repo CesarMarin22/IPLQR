@@ -35,7 +35,7 @@ android {
         applicationId 'com.proyecto_qr.app'
         minSdkVersion flutter.minSdkVersion
         targetSdkVersion flutter.targetSdkVersion
-        versionCode 7
+        versionCode 9
         versionName flutterVersionName
     }
 

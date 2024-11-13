@@ -23,7 +23,7 @@ class _AdminUsuariosState extends State<AdminUsuarios> {
 
   Future<List<dynamic>> fetchUsers() async {
     final response =
-        await http.get(Uri.parse('http://20.97.20.115:8081/api/usuarios'));
+        await http.get(Uri.parse('http://10.2.0.7:8081/api/usuarios'));
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {

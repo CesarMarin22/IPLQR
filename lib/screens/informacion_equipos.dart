@@ -303,7 +303,7 @@ class _HomePageState extends State<HomePage> {
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
-      'https://52.152.107.200:50000/b1s/v1/\$crossjoin(Items,Manufacturers)?'
+      'https://10.2.0.6:50000/b1s/v1/\$crossjoin(Items,Manufacturers)?'
       '\$expand=Items(\$select=ForeignName,U_Modelo,U_Voltaje,U_Capacidad,U_AlturaMaxEstiba,U_Tipo,User_Text,Valid),'
       'Manufacturers(\$select=ManufacturerName)&'
       '\$filter=(Items/ItemsGroupCode eq 435 or Items/AssetGroup eq \'MO\') and Items/Manufacturer eq Manufacturers/Code and Items/ForeignName eq \'$numSerie\'',
