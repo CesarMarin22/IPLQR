@@ -1,0 +1,293 @@
+import 'package:flutter/material.dart';
+import 'package:proyecto_qr/screens/admin_usuarios.dart';
+import 'package:proyecto_qr/screens/lector_qr.dart';
+import 'package:proyecto_qr/screens/sesion.dart';
+import 'lector_manual.dart';
+import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:provider/provider.dart';
+import 'dart:io';
+import 'package:http/io_client.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
+import 'dart:async';
+import 'package:proyecto_qr/utils/popup_reportes.dart';
+
+class eleccion extends StatefulWidget {
+  const eleccion({Key? key}) : super(key: key);
+
+  @override
+  State<eleccion> createState() => _eleccion();
+}
+
+class _eleccion extends State<eleccion> {
+  String authToken = '';
+  String sessionCookie = '';
+  String routeIdCookie = '';
+
+  @override
+  Widget build(BuildContext context) {
+    Provider.of<SerialNumberModel>(context, listen: false).setSerialNumber('');
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    sessionCookie = authProvider.sessionCookie;
+    routeIdCookie = authProvider.routeIdCookie;
+    authToken = authProvider.authToken;
+    final userProfileId = authProvider.userProfileId;
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+        toolbarHeight: 80,
+        title: Center(
+          child: Image.asset(
+            'assets/logo ipl_BLANCO.png',
+            width: 70,
+            height: 70,
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 30),
+            child: Column(
+              children: [
+                const Text(
+                  '¿QUE DESEAS HACER?',
+                  style: TextStyle(fontSize: 30),
+                ),
+                const SizedBox(height: 100),
+                SizedBox(
+                  width: 200,
+                  height: 60,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const QRScannerPage()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Colors.black, width: 5),
+                      ),
+                    ),
+                    child: const Text(
+                      'LEER QR',
+                      style: TextStyle(fontSize: 20, color: Colors.black),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: 200,
+                  height: 60,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const InputPage()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Colors.black, width: 5),
+                      ),
+                    ),
+                    child: const Text(
+                      'INGRESAR ARTICULO MANUALMENTE',
+                      style: TextStyle(fontSize: 15, color: Colors.black),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                if (userProfileId == 1)
+                  SizedBox(
+                    width: 200,
+                    height: 60,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (context) => const AdminUsuarios()),
+                        );
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: const BorderSide(color: Colors.black, width: 5),
+                        ),
+                      ),
+                      child: const Text(
+                        'ADMIN USUARIOS',
+                        style: TextStyle(fontSize: 20, color: Colors.black),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: 200,
+                  height: 60,
+                  child: ElevatedButton(
+                    onPressed: () => mostrarPopupReportes(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Colors.black, width: 5),
+                      ),
+                    ),
+                    child: const Text(
+                      'REPORTES',
+                      style: TextStyle(fontSize: 20, color: Colors.black),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 80),
+                SizedBox(
+                  width: 200,
+                  height: 90,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      await logout();
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const LoginScreen()),
+                        (Route<dynamic> route) => false,
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      backgroundColor: const Color.fromARGB(255, 250, 2, 2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        side: const BorderSide(color: Colors.black, width: 5),
+                      ),
+                    ),
+                    child: const Text(
+                      'CERRAR SESIÓN',
+                      style: TextStyle(fontSize: 20, color: Colors.white),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      bottomNavigationBar: const BottomAppBar(
+        color: Color.fromARGB(255, 29, 29, 27),
+        shape: CircularNotchedRectangle(),
+        child: SizedBox(
+          height: 50,
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  'Copyright ©2023, Todos los Derechos Reservados.',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w300,
+                      fontSize: 12.0,
+                      color: Colors.white),
+                ),
+                Text(
+                  'Powered by IPL',
+                  style: TextStyle(
+                      fontWeight: FontWeight.w300,
+                      fontSize: 12.0,
+                      color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> logout() async {
+    final client = HttpClient();
+    client.badCertificateCallback =
+        (X509Certificate cert, String host, int port) => true;
+    final ioClient = IOClient(client);
+    final url = Uri.parse('https://68.155.144.63:50000/b1s/v1/Logout');
+
+    try {
+      final response = await ioClient.get(
+        url,
+        headers: {
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
+        },
+      );
+
+      if (response.statusCode == 204) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Sesión cerrada exitosamente'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      } else {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Error al cerrar sesión'),
+              content: Text('Código de error: \${response.statusCode}'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    } catch (error) {
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Text('Error de red al cerrar sesión'),
+            content: Text('Error: $error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    }
+  }
+}

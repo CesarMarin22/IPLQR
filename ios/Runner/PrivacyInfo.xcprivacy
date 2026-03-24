@@ -1,0 +1,10 @@
+
+{
+  "privacy": {
+    "tracking": {
+      "enabled": false
+    },
+    "dataCategories": []
+  },
+  "version": "1.0"
+}
