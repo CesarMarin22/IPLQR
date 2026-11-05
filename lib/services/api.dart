@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 /// Cliente del backend de la Intranet IPL.
 ///
@@ -11,10 +13,28 @@ import 'package:http/http.dart' as http;
 class Api {
   Api._();
 
-  /// URL pública del backend (con certificado válido).
-  static const String baseUrl = 'https://iplsap10.ddns.net:8443/api';
+  static const String _host = 'iplsap10.ddns.net';
 
-  static final http.Client _client = http.Client();
+  /// URL pública del backend.
+  static const String baseUrl = 'https://$_host:8443/api';
+
+  /// Huella SHA-1 del certificado que hoy tiene el servidor en 8443. Es
+  /// autofirmado (CN=iplwin, vence el 8 de mayo de 2027), así que Android no
+  /// lo reconoce. Se acepta SOLO ese certificado y SOLO para este servidor;
+  /// cualquier otro certificado inválido se rechaza. Cuando el servidor tenga un
+  /// certificado válido (Let's Encrypt), la validación normal lo acepta y esto
+  /// deja de usarse.
+  static const String _huellaServidor =
+      'eee31a2fcc7fe3613e61d915524d6a4be05143ec';
+
+  static final http.Client _client = IOClient(
+    HttpClient()
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) =>
+          host == _host && _hex(cert.sha1) == _huellaServidor,
+  );
+
+  static String _hex(List<int> bytes) =>
+      bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
   static String _cookie = '';
 
   /// Se llama cuando el servidor responde 401 (sesión vencida o cerrada).
