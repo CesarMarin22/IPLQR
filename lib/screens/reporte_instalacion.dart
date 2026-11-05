@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
-import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 import 'package:rive/rive.dart';
 
@@ -22,9 +21,6 @@ class FileViewerFromAPI extends StatefulWidget {
 }
 
 class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
-  String authToken = '';
-  String sessionCookie = '';
-  String routeIdCookie = '';
   bool _isLoading = true;
   String? localFilePath;
 
@@ -37,15 +33,6 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
     riveFactory: Factory.rive,
   );
 
-  /// Un solo cliente para las tres peticiones; se cierra en dispose.
-  IOClient? _client;
-  IOClient get _http => _client ??= IOClient(
-        io.HttpClient()
-          ..connectionTimeout = _timeout
-          ..badCertificateCallback =
-              (io.X509Certificate cert, String host, int port) => true,
-      );
-
   @override
   void initState() {
     super.initState();
@@ -54,7 +41,6 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
 
   @override
   void dispose() {
-    _client?.close();
     _riveLoader.dispose();
     super.dispose();
   }
@@ -72,115 +58,20 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
     }
 
     if (numSerie.isNotEmpty) {
-      final authProvider = context.read<AuthProvider>();
-      sessionCookie = authProvider.sessionCookie;
-      routeIdCookie = authProvider.routeIdCookie;
-      authToken = authProvider.authToken;
-
-      await fetchAttachmentEntry(numSerie);
+      context.read<AuthProvider>().resetSession();
+      await downloadAndDisplayFile(numSerie);
     } else {
       showNoDocumentDialog();
     }
   }
 
-  Map<String, String> get _headers => {
-        'Authorization': 'Bearer $authToken',
-        'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-      };
-
-  Future<void> fetchAttachmentEntry(String numSerie) async {
-    final firstQueryUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/CustomerEquipmentCards?'
-      '\$select=AttachmentEntry&'
-      '\$filter=ManufacturerSerialNum eq \'$numSerie\'and StatusOfSerialNumber eq \'A\'',
-    );
-
+  /// El servidor busca en SAP el adjunto de la tarjeta del equipo y regresa el PDF.
+  Future<void> downloadAndDisplayFile(String numSerie) async {
     try {
-      final response =
-          await _http.get(firstQueryUrl, headers: _headers).timeout(_timeout);
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final values = data is Map ? data['value'] : null;
-
-        if (values is! List || values.isEmpty || values.first is! Map) {
-          showNoDocumentDialog();
-          return;
-        }
-
-        final attachmentEntry = (values.first as Map)['AttachmentEntry'];
-
-        if (attachmentEntry is num) {
-          await fetchFileNameAndOpen(attachmentEntry.toInt());
-        } else {
-          showNoDocumentDialog();
-        }
-      } else {
-        showErrorDialog(
-          'No se pudo consultar el reporte (código ${response.statusCode}).',
-        );
-      }
-    } on TimeoutException {
-      showErrorDialog(_timeoutMsg);
-    } catch (error) {
-      debugPrint('Error AttachmentEntry: $error');
-      showErrorDialog(_networkMsg);
-    }
-  }
-
-  Future<void> fetchFileNameAndOpen(int attachmentEntry) async {
-    final secondQueryUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/Attachments2?\$filter=AbsoluteEntry eq $attachmentEntry',
-    );
-
-    try {
-      final response =
-          await _http.get(secondQueryUrl, headers: _headers).timeout(_timeout);
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final values = data is Map ? data['value'] : null;
-        final first = values is List && values.isNotEmpty && values.first is Map
-            ? values.first as Map
-            : null;
-        final attachmentLines = first?['Attachments2_Lines'];
-
-        if (attachmentLines is List &&
-            attachmentLines.isNotEmpty &&
-            attachmentLines.first is Map) {
-          final line = attachmentLines.first as Map;
-          final fileName = line['FileName'];
-          final fileExtension = line['FileExtension'];
-
-          if (fileName != null && fileExtension != null) {
-            final fileUrl = Uri.parse(
-              'http://68.155.144.63:9090/attachments/$fileName.$fileExtension',
-            );
-            await downloadAndDisplayFile(fileUrl);
-          } else {
-            showNoDocumentDialog();
-          }
-        } else {
-          showNoDocumentDialog();
-        }
-      } else {
-        showErrorDialog(
-          'No se pudo obtener el archivo (código ${response.statusCode}).',
-        );
-      }
-    } on TimeoutException {
-      showErrorDialog(_timeoutMsg);
-    } catch (error) {
-      debugPrint('Error Attachments2: $error');
-      showErrorDialog(_networkMsg);
-    }
-  }
-
-  Future<void> downloadAndDisplayFile(Uri fileUrl) async {
-    try {
-      final response = await _http.get(fileUrl).timeout(_timeout);
+      final response = await Api.get(
+        '/app-montacargas/reporte-instalacion',
+        {'serie': numSerie},
+      ).timeout(_timeout);
       if (!mounted) return;
 
       if (response.statusCode == 200) {
@@ -196,14 +87,17 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
           localFilePath = filePath;
           _isLoading = false;
         });
+      } else if (response.statusCode == 404) {
+        showNoDocumentDialog();
       } else {
-        showErrorDialog('Error al descargar el archivo.');
+        showErrorDialog(Api.mensaje(response) ??
+            'No se pudo consultar el reporte (código ${response.statusCode}).');
       }
     } on TimeoutException {
       showErrorDialog(_timeoutMsg);
     } catch (error) {
       debugPrint('Error descarga: $error');
-      showErrorDialog('Hubo un problema al descargar el archivo.');
+      showErrorDialog(_networkMsg);
     }
   }
 

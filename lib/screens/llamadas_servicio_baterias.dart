@@ -5,12 +5,12 @@ import 'dart:io';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/detalle_llamadas_baterias.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 const Color especialColor = Color(0xFFA9DFBF);
@@ -45,18 +45,9 @@ class LlamadaServiciosBaterias extends StatefulWidget {
 class _LlamadaServiciosBateriasState extends State<LlamadaServiciosBaterias> {
   static const _timeout = Duration(seconds: 25);
 
-  late final IOClient _ioClient = IOClient(
-    HttpClient()
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true,
-  );
-
   bool isOption1Selected = true;
   late Future<List<LlamadaServicio>> futureCalls;
   int touchedIndex = -1;
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
 
   @override
   void initState() {
@@ -67,7 +58,6 @@ class _LlamadaServiciosBateriasState extends State<LlamadaServiciosBaterias> {
 
   @override
   void dispose() {
-    _ioClient.close();
     super.dispose();
   }
 
@@ -84,10 +74,7 @@ class _LlamadaServiciosBateriasState extends State<LlamadaServiciosBaterias> {
   Future<List<LlamadaServicio>> fetchData() async {
     final numSerie = context.read<SerialNumberModel>().serialNumber;
     if (numSerie.isNotEmpty) {
-      final authProvider = context.read<AuthProvider>();
-      sessionCookie = authProvider.sessionCookie;
-      routeIdCookie = authProvider.routeIdCookie;
-      authToken = authProvider.authToken;
+      context.read<AuthProvider>().resetSession();
       return fetchDataFromAPI(numSerie);
     }
     return [];
@@ -109,23 +96,10 @@ class _LlamadaServiciosBateriasState extends State<LlamadaServiciosBaterias> {
   }
 
   Future<List<LlamadaServicio>> fetchDataFromAPI(String numSerie) async {
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes)?'
-      '\$expand=ServiceCalls(\$select=ServiceCallID, Subject, CreationDate),'
-      'ServiceCallTypes(\$select=Name)&'
-      '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and ServiceCalls/ManufacturerSerialNum eq \'$numSerie\'&'
-      '\$orderby=CreationDate desc',
-    );
 
     final http.Response response;
     try {
-      response = await _ioClient.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      response = await Api.get('/app-montacargas/llamadas', {'serie': numSerie}).timeout(_timeout);
     } on TimeoutException {
       throw 'El servidor tardó demasiado en responder. Intenta de nuevo.';
     } on SocketException {

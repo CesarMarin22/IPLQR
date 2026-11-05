@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 const _timeout = Duration(seconds: 25);
@@ -29,14 +28,6 @@ class _DetallesLlamadaServicioEquiposState
   bool _sinDetalles = false;
   String? _error;
 
-  IOClient? _client;
-  IOClient get _http => _client ??= IOClient(
-        HttpClient()
-          ..connectionTimeout = _timeout
-          ..badCertificateCallback =
-              (X509Certificate cert, String host, int port) => true,
-      );
-
   @override
   void initState() {
     super.initState();
@@ -45,7 +36,6 @@ class _DetallesLlamadaServicioEquiposState
 
   @override
   void dispose() {
-    _client?.close();
     super.dispose();
   }
 
@@ -59,31 +49,14 @@ class _DetallesLlamadaServicioEquiposState
   }
 
   Future<void> _fetchOTDetails(String ot) async {
-    final auth = context.read<AuthProvider>();
-    final authToken = auth.authToken;
-    final sessionCookie = auth.sessionCookie;
-    final routeIdCookie = auth.routeIdCookie;
-
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
-      '\$expand=ServiceCalls(\$select=Subject,U_PersonWhoReports,Resolution,U_Horometro),'
-      'ServiceCallTypes(\$select=Name),'
-      'EmployeesInfo(\$select=FirstName,LastName)&'
-      '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and EmployeesInfo/EmployeeID eq ServiceCalls/TechnicianCode and ServiceCalls/ServiceCallID eq $ot',
-    );
+    context.read<AuthProvider>().resetSession();
 
     Map<String, dynamic>? detalles;
     var sinDetalles = false;
     String? error;
 
     try {
-      final response = await _http.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      final response = await Api.get('/app-montacargas/llamadas/$ot').timeout(_timeout);
       if (!mounted) return;
 
       // Antes las ramas 401/404/otros estaban dentro del "if 200" y nunca se

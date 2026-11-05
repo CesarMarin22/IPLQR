@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
@@ -12,6 +10,7 @@ import 'package:proyecto_qr/screens/escoger.dart';
 import 'package:proyecto_qr/screens/menu_baterias.dart';
 import 'package:proyecto_qr/screens/menu_cargadores.dart';
 import 'package:proyecto_qr/screens/menu_equipos.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InputPage extends StatefulWidget {
@@ -56,7 +55,7 @@ class _InputPageState extends State<InputPage> {
 
     // Leer todo lo que depende de context antes del primer await.
     context.read<SerialNumberModel>().setSerialNumber(serie);
-    final auth = context.read<AuthProvider>();
+    context.read<AuthProvider>().resetSession();
     final navigator = Navigator.of(context);
 
     setState(() => _isLoading = true);
@@ -64,12 +63,7 @@ class _InputPageState extends State<InputPage> {
     String? error;
     Widget? destino;
     try {
-      destino = await _fetchDestino(
-        serie,
-        authToken: auth.authToken,
-        sessionCookie: auth.sessionCookie,
-        routeIdCookie: auth.routeIdCookie,
-      );
+      destino = await _fetchDestino(serie);
       if (destino == null) {
         error = 'No se encontró un artículo válido con ese número de serie.';
       }
@@ -96,63 +90,39 @@ class _InputPageState extends State<InputPage> {
     serialNumberController.clear();
   }
 
-  /// Consulta SAP y devuelve el menú a abrir, o null si no es válido.
-  Future<Widget?> _fetchDestino(
-    String serie, {
-    required String authToken,
-    required String sessionCookie,
-    required String routeIdCookie,
-  }) async {
-    final client = HttpClient()
-      ..connectionTimeout = _timeout
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true;
-    final ioClient = IOClient(client);
+  /// Consulta el artículo (SAP, a través de la Intranet) y devuelve el menú a
+  /// abrir, o null si no es válido.
+  Future<Widget?> _fetchDestino(String serie) async {
+    final response = await Api.get(
+      '/app-montacargas/articulo',
+      {'serie': serie},
+    ).timeout(_timeout);
 
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/\$crossjoin(Items,ItemGroups)?'
-      '\$expand=Items(\$select=AssetGroup),'
-      'ItemGroups(\$select=GroupName)&'
-      '\$filter=Items/ItemsGroupCode eq ItemGroups/Number and Items/ForeignName eq \'$serie\'',
-    );
-
-    try {
-      final response = await ioClient.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
-
-      if (response.statusCode != 200) {
-        throw _HttpStatusException(response.statusCode);
-      }
-
-      final decoded = json.decode(response.body);
-      final values = decoded is Map ? decoded['value'] : null;
-      if (values is! List) return null;
-
-      for (final item in values) {
-        if (item is! Map || item['ItemGroups'] == null) continue;
-
-        final groups = item['ItemGroups'];
-        final items = item['Items'];
-        final tipo = groups is Map ? (groups['GroupName'] ?? '') : '';
-        final assetGroup = items is Map ? (items['AssetGroup'] ?? '') : '';
-
-        if (tipo == 'MONTACARGAS' || assetGroup == 'MO') {
-          return const menuEquipos();
-        } else if (tipo == 'BATERIAS' || assetGroup == 'BAT') {
-          return const menuBaterias();
-        } else if (tipo == 'CARGADORES' || assetGroup == 'CAR') {
-          return const menuCargadores();
-        }
-      }
-      return null;
-    } finally {
-      ioClient.close();
+    if (response.statusCode != 200) {
+      throw _HttpStatusException(response.statusCode);
     }
+
+    final decoded = json.decode(response.body);
+    final values = decoded is Map ? decoded['value'] : null;
+    if (values is! List) return null;
+
+    for (final item in values) {
+      if (item is! Map || item['ItemGroups'] == null) continue;
+
+      final groups = item['ItemGroups'];
+      final items = item['Items'];
+      final tipo = groups is Map ? (groups['GroupName'] ?? '') : '';
+      final assetGroup = items is Map ? (items['AssetGroup'] ?? '') : '';
+
+      if (tipo == 'MONTACARGAS' || assetGroup == 'MO') {
+        return const menuEquipos();
+      } else if (tipo == 'BATERIAS' || assetGroup == 'BAT') {
+        return const menuBaterias();
+      } else if (tipo == 'CARGADORES' || assetGroup == 'CAR') {
+        return const menuCargadores();
+      }
+    }
+    return null;
   }
 
   void _volverAlMenu() {

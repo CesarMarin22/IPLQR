@@ -1,13 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InformacionCargadores extends StatefulWidget {
@@ -20,14 +19,6 @@ class InformacionCargadores extends StatefulWidget {
 class _InformacionCargadoresState extends State<InformacionCargadores> {
   static const _timeout = Duration(seconds: 25);
   static const _sinInfo = 'No Contiene Información';
-
-  late final IOClient _client = IOClient(
-    HttpClient()
-      ..connectionTimeout = _timeout
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) =>
-              true, // Permite certificados autofirmados
-  );
 
   String _marca = '';
   String _modelo = '';
@@ -48,7 +39,6 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
 
   @override
   void dispose() {
-    _client.close();
     super.dispose();
   }
 
@@ -90,28 +80,13 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
   }
 
   Future<void> fetchDataFromAPI(String numSerie) async {
-    final auth = context.read<AuthProvider>();
-    final authToken = auth.authToken;
-    final sessionCookie = auth.sessionCookie;
-    final routeIdCookie = auth.routeIdCookie;
-
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/Items?'
-      '\$select=U_MarcaC,U_ModeloCargador,ForeignName,U_SalidaVoltaje,U_Amperaje,User_Text&'
-      '\$filter=(ItemsGroupCode eq 437 or AssetGroup eq \'CAR\') and ForeignName eq \'$numSerie\'',
-    );
+    context.read<AuthProvider>().resetSession();
 
     String? error;
     bool found = false;
 
     try {
-      final response = await _client.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      final response = await Api.get('/app-montacargas/cargador', {'serie': numSerie}).timeout(_timeout);
       if (!mounted) return;
 
       if (response.statusCode == 200) {

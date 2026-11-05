@@ -1,16 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/detalle_llamadas_cargadores.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 const Color especialColor = Color(0xFFA9DFBF);
@@ -51,14 +50,6 @@ class _LlamadaServiciosCargadoresState
     extends State<LlamadaServiciosCargadores> {
   static const _timeout = Duration(seconds: 25);
 
-  late final IOClient _client = IOClient(
-    HttpClient()
-      ..connectionTimeout = _timeout
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) =>
-              true, // Permite certificados autofirmados
-  );
-
   bool isOption1Selected = true;
   Future<List<LlamadaServicio>>? futureCalls;
   String? selectedOT;
@@ -74,7 +65,6 @@ class _LlamadaServiciosCargadoresState
 
   @override
   void dispose() {
-    _client.close();
     super.dispose();
   }
 
@@ -128,28 +118,11 @@ class _LlamadaServiciosCargadoresState
   }
 
   Future<List<LlamadaServicio>> fetchDataFromAPI(String numSerie) async {
-    final auth = context.read<AuthProvider>();
-    final authToken = auth.authToken;
-    final sessionCookie = auth.sessionCookie;
-    final routeIdCookie = auth.routeIdCookie;
-
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes)?'
-      '\$expand=ServiceCalls(\$select=ServiceCallID, Subject, CreationDate),'
-      'ServiceCallTypes(\$select=Name)&'
-      '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and ServiceCalls/ManufacturerSerialNum eq \'$numSerie\'&'
-      '\$orderby=CreationDate desc',
-    );
+    context.read<AuthProvider>().resetSession();
 
     final http.Response response;
     try {
-      response = await _client.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      response = await Api.get('/app-montacargas/llamadas', {'serie': numSerie}).timeout(_timeout);
     } on TimeoutException {
       throw _LoadException(
           'El servidor tardó demasiado en responder. Intenta de nuevo.');

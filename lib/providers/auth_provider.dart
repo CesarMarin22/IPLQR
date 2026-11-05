@@ -1,119 +1,120 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/io_client.dart';
-import 'package:proyecto_qr/models/user.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
+/// Sesión de la app con los usuarios y permisos de la Intranet.
+///
+/// - Inicia sesión con /api/auth/login de la Intranet (misma contraseña, mismo
+///   bloqueo por intentos fallidos).
+/// - El acceso lo da el permiso VER del módulo APP_MONTACARGAS y los reportes por
+///   cliente el de APP_MONTACARGAS_REPORTES; ambos se asignan en la Intranet.
 class AuthProvider with ChangeNotifier {
-  String _sessionCookie = '';
-  String _routeIdCookie = '';
-  String _authToken = '';
-  User? _authenticatedUser;
-  int? _userProfileId;
-  Timer? _sessionTimer;
-  DateTime? _sessionStartTime;
-  final int _sessionTimeoutMinutes = 30; // Tiempo de sesión en minutos
-
-  int? get userProfileId => _userProfileId;
-  String get sessionCookie => _sessionCookie;
-  String get routeIdCookie => _routeIdCookie;
-  String get authToken => _authToken;
-  User? get authenticatedUser => _authenticatedUser;
-  DateTime? get sessionStartTime => _sessionStartTime;
-  int get sessionTimeoutMinutes => _sessionTimeoutMinutes;
-  bool get isLoggedIn => _sessionCookie.isNotEmpty;
-
-  static const apiUri = 'http://68.155.144.63:8081/api/usuarios';
-  static const _sapBase = 'https://68.155.144.63:50000/b1s/v1';
   static const _timeout = Duration(seconds: 25);
 
-  IOClient _sapClient() {
-    final client = HttpClient()
-      ..connectionTimeout = _timeout
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
-    return IOClient(client);
+  AuthProvider() {
+    Api.onSesionVencida = () => _expireSession(
+        'Tu sesión terminó. Inicia sesión de nuevo.');
   }
 
-  /// Valida al usuario y abre sesión en SAP B1.
-  /// No navega: la pantalla que llama decide a dónde ir.
-  /// El parámetro [context] se conserva por compatibilidad y no se usa.
-  Future<void> login(String username, String password,
-      [BuildContext? context]) async {
-    final http.Response response;
-    try {
-      response = await http.get(Uri.parse(apiUri)).timeout(_timeout);
-    } on TimeoutException {
-      throw NetworkException('El servidor tardó demasiado en responder.');
-    } catch (_) {
-      throw NetworkException('No se pudo conectar con el servidor.');
-    }
+  Timer? _sessionTimer;
+  DateTime? _sessionStartTime;
+  final int _sessionTimeoutMinutes = 30; // Igual que la Intranet
 
+  String _usuario = '';
+  String _nombre = '';
+  bool _puedeReportes = false;
+
+  String get usuario => _usuario;
+  String get nombre => _nombre;
+  bool get puedeReportes => _puedeReportes;
+  DateTime? get sessionStartTime => _sessionStartTime;
+  int get sessionTimeoutMinutes => _sessionTimeoutMinutes;
+  bool get isLoggedIn => Api.tieneSesion;
+
+  /// Inicia sesión. Lanza [PasswordTemporalException] si la Intranet pide
+  /// cambiar la contraseña (entonces la pantalla de login muestra el cambio y
+  /// después llama a [cargarPermisos]).
+  Future<void> login(String username, String password) async {
+    Api.limpiarSesion();
+    final response = await _llamar(() => Api.post(
+          '/auth/login',
+          {'USUARIO': username, 'PWD': password},
+          avisar401: false,
+        ));
+
+    if (response.statusCode == 401) {
+      throw InvalidCredentialsException(
+          Api.mensaje(response) ?? 'Usuario o contraseña incorrectos');
+    }
+    if (response.statusCode == 403) {
+      throw UserNotActiveException(
+          Api.mensaje(response) ?? 'El usuario no está activo');
+    }
+    if (response.statusCode == 429) {
+      throw InvalidCredentialsException(
+          Api.mensaje(response) ?? 'Demasiados intentos fallidos');
+    }
     if (response.statusCode != 200) {
       throw NetworkException(
-          'Error del servidor de usuarios (${response.statusCode}).');
+          Api.mensaje(response) ?? 'Error del servidor (${response.statusCode}).');
     }
 
-    final List<dynamic> usuarios = json.decode(response.body);
-    final usuario = usuarios.cast<Map<String, dynamic>?>().firstWhere(
-          (user) => user?['USUARIO'] == username,
-          orElse: () => null,
-        );
-
-    if (usuario == null) {
-      throw UserNotFoundException('Usuario incorrecto');
+    final data = Api.data(response);
+    if (data is Map && data['DEBE_CAMBIAR_PWD'] == true) {
+      throw PasswordTemporalException();
     }
-    if (usuario['PWD'] != password) {
-      throw InvalidCredentialsException('Contraseña incorrecta');
+    await cargarPermisos();
+  }
+
+  /// Cambia la contraseña temporal (misma regla que la Intranet).
+  /// Devuelve null si se cambió o el mensaje de error.
+  Future<String?> cambiarPassword(String actual, String nueva) async {
+    final response = await _llamar(() => Api.post(
+          '/auth/cambiar-password',
+          {'ACTUAL': actual, 'NUEVA': nueva},
+        ));
+    if (response.statusCode == 200) return null;
+    return Api.mensaje(response) ?? 'No se pudo cambiar la contraseña.';
+  }
+
+  /// Revisa que el usuario tenga acceso a la app y qué puede ver.
+  Future<void> cargarPermisos() async {
+    final response =
+        await _llamar(() => Api.get('/app-montacargas/permisos'));
+
+    if (response.statusCode == 403) {
+      await logout();
+      throw SinPermisoException(
+          'Tu usuario no tiene acceso a esta app. Pide en la Intranet el '
+          'permiso "APP MONTACARGAS".');
     }
-    if (usuario['ACTIVO'] != 1) {
-      throw UserNotActiveException('El usuario no está activo');
+    if (response.statusCode != 200) {
+      await logout();
+      throw NetworkException(
+          Api.mensaje(response) ?? 'Error del servidor (${response.statusCode}).');
     }
 
-    const requestData = {
-      "UserName": "manager",
-      "Password": "yottak01",
-      "CompanyDB": "B1_IPL"
-    };
+    final data = Api.data(response);
+    final permisos = data is Map ? data : const {};
+    _usuario = '${permisos['USUARIO'] ?? ''}';
+    _nombre = '${permisos['NOMBRE'] ?? ''}';
+    _puedeReportes = permisos['REPORTES'] == true;
+    _startSessionTimer();
+    notifyListeners();
+  }
 
-    final ioClient = _sapClient();
+  Future<dynamic> _llamar(Future<dynamic> Function() peticion) async {
     try {
-      final loginResponse = await ioClient
-          .post(
-            Uri.parse('$_sapBase/Login'),
-            headers: {"Content-Type": "application/json"},
-            body: json.encode(requestData),
-          )
-          .timeout(_timeout);
-
-      if (loginResponse.statusCode != 200) {
-        throw NetworkException(
-            'SAP rechazó el inicio de sesión (${loginResponse.statusCode}).');
-      }
-
-      final jsonResponse = json.decode(loginResponse.body);
-      final cookiesMap = parseCookies(loginResponse.headers['set-cookie']);
-
-      _authToken = jsonResponse['SessionId'] ?? '';
-      _sessionCookie = cookiesMap['B1SESSION'] ?? _authToken;
-      _routeIdCookie = cookiesMap['ROUTEID'] ?? '';
-      _userProfileId = usuario['PERFIL'] as int?;
-
-      _startSessionTimer();
-      notifyListeners();
-    } on NetworkException {
-      rethrow;
+      return await peticion().timeout(_timeout);
     } on TimeoutException {
-      throw NetworkException('SAP tardó demasiado en responder.');
-    } catch (e) {
-      debugPrint('Error login SAP: $e');
-      throw NetworkException('Error al conectar con SAP.');
-    } finally {
-      ioClient.close();
+      throw NetworkException('El servidor tardó demasiado en responder.');
+    } on AppException {
+      rethrow;
+    } catch (_) {
+      throw NetworkException('No se pudo conectar con el servidor.');
     }
   }
 
@@ -125,7 +126,7 @@ class AuthProvider with ChangeNotifier {
       if (start == null || !isLoggedIn) return;
       if (DateTime.now().difference(start) >
           Duration(minutes: _sessionTimeoutMinutes)) {
-        _expireSession();
+        _expireSession('Tu sesión ha expirado. Inicia sesión de nuevo.');
       }
     });
   }
@@ -140,13 +141,14 @@ class AuthProvider with ChangeNotifier {
     _sessionTimer = null;
   }
 
-  void _expireSession() {
-    logout();
+  bool _expirando = false;
+
+  void _expireSession(String mensaje) {
+    if (_expirando) return;
+    _expirando = true;
+    logout().whenComplete(() => _expirando = false);
     appMessengerKey.currentState?.showSnackBar(
-      const SnackBar(
-        content: Text('Tu sesión ha expirado. Inicia sesión de nuevo.'),
-        backgroundColor: AppColors.danger,
-      ),
+      SnackBar(content: Text(mensaje), backgroundColor: AppColors.danger),
     );
     appNavigatorKey.currentState?.pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
@@ -154,55 +156,31 @@ class AuthProvider with ChangeNotifier {
     );
   }
 
-  /// Cierra la sesión en SAP y limpia los datos locales.
-  /// Devuelve true si SAP confirmó el cierre. No navega.
+  /// Cierra la sesión en el servidor y limpia los datos locales.
+  /// Devuelve true si el servidor confirmó el cierre. No navega.
   Future<bool> logout([BuildContext? context]) async {
-    final token = _authToken;
-    final session = _sessionCookie;
-    final routeId = _routeIdCookie;
-
-    _authenticatedUser = null;
-    _sessionCookie = '';
-    _routeIdCookie = '';
-    _authToken = '';
-    _userProfileId = null;
+    final teniaSesion = Api.tieneSesion;
+    _usuario = '';
+    _nombre = '';
+    _puedeReportes = false;
     _sessionStartTime = null;
     cancelSessionTimer();
-    notifyListeners();
 
-    if (session.isEmpty) return true;
-
-    final ioClient = _sapClient();
+    if (!teniaSesion) {
+      notifyListeners();
+      return true;
+    }
     try {
-      final response = await ioClient.post(
-        Uri.parse('$_sapBase/Logout'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Cookie': 'B1SESSION=$session; ROUTEID=$routeId',
-        },
-      ).timeout(_timeout);
-      return response.statusCode == 204;
+      final response = await Api.post('/auth/logout', null, avisar401: false)
+          .timeout(_timeout);
+      return response.statusCode == 200;
     } catch (e) {
       debugPrint('Error de red al cerrar sesión: $e');
       return false;
     } finally {
-      ioClient.close();
+      Api.limpiarSesion();
+      notifyListeners();
     }
-  }
-
-  Map<String, String> parseCookies(String? cookies) {
-    final cookieMap = <String, String>{};
-    if (cookies == null) return cookieMap;
-    for (final match
-        in RegExp(r'(B1SESSION|ROUTEID)=([^;,\s]+)').allMatches(cookies)) {
-      cookieMap[match.group(1)!] = match.group(2)!;
-    }
-    return cookieMap;
-  }
-
-  void setUserProfileId(int id) {
-    _userProfileId = id;
-    notifyListeners();
   }
 
   @override
@@ -212,24 +190,30 @@ class AuthProvider with ChangeNotifier {
   }
 }
 
-class NetworkException implements Exception {
+class AppException implements Exception {
   final String message;
-  NetworkException(this.message);
+  AppException(this.message);
   @override
   String toString() => message;
 }
 
-class UserNotFoundException implements Exception {
-  final String message;
-  UserNotFoundException(this.message);
+class NetworkException extends AppException {
+  NetworkException(super.message);
 }
 
-class InvalidCredentialsException implements Exception {
-  final String message;
-  InvalidCredentialsException(this.message);
+class InvalidCredentialsException extends AppException {
+  InvalidCredentialsException(super.message);
 }
 
-class UserNotActiveException implements Exception {
-  final String message;
-  UserNotActiveException(this.message);
+class UserNotActiveException extends AppException {
+  UserNotActiveException(super.message);
+}
+
+class SinPermisoException extends AppException {
+  SinPermisoException(super.message);
+}
+
+class PasswordTemporalException extends AppException {
+  PasswordTemporalException()
+      : super('Debes cambiar tu contraseña temporal antes de continuar.');
 }

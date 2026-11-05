@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 /// Detalle de una orden de trabajo (llamada de servicio) de un cargador.
@@ -29,14 +28,6 @@ class _DetallesLlamadaServicioCargadoresState
   static const _timeout = Duration(seconds: 25);
   static const _sinDato = '(no se proporcionó el dato)';
 
-  late final IOClient _client = IOClient(
-    HttpClient()
-      ..connectionTimeout = _timeout
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) =>
-              true, // Permite certificados autofirmados
-  );
-
   Map<String, dynamic>? detallesOT; // Almacena los detalles de la OT
   bool _loading = true;
   bool _sinDetalles = false;
@@ -50,7 +41,6 @@ class _DetallesLlamadaServicioCargadoresState
 
   @override
   void dispose() {
-    _client.close();
     super.dispose();
   }
 
@@ -74,31 +64,14 @@ class _DetallesLlamadaServicioCargadoresState
   }
 
   Future<void> _fetchOTDetails(String ot) async {
-    final auth = context.read<AuthProvider>();
-    final authToken = auth.authToken;
-    final sessionCookie = auth.sessionCookie;
-    final routeIdCookie = auth.routeIdCookie;
-
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
-      '\$expand=ServiceCalls(\$select=Subject,U_PersonWhoReports,Resolution),'
-      'ServiceCallTypes(\$select=Name),'
-      'EmployeesInfo(\$select=FirstName,LastName)&'
-      '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and EmployeesInfo/EmployeeID eq ServiceCalls/TechnicianCode and ServiceCalls/ServiceCallID eq $ot',
-    );
+    context.read<AuthProvider>().resetSession();
 
     Map<String, dynamic>? detalles;
     bool sinDetalles = false;
     String? error;
 
     try {
-      final response = await _client.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      final response = await Api.get('/app-montacargas/llamadas/$ot').timeout(_timeout);
       if (!mounted) return;
 
       if (response.statusCode == 200) {

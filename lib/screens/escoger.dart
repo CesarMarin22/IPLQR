@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
-import 'package:proyecto_qr/screens/admin_usuarios.dart';
 import 'package:proyecto_qr/screens/lector_qr.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
@@ -76,8 +75,9 @@ class _eleccion extends State<eleccion> {
 
   @override
   Widget build(BuildContext context) {
-    final userProfileId = context.select<AuthProvider, int?>(
-      (p) => p.userProfileId,
+    // Reportes por cliente: solo con el permiso APP_MONTACARGAS_REPORTES de la Intranet
+    final puedeReportes = context.select<AuthProvider, bool>(
+      (p) => p.puedeReportes,
     );
 
     return PopScope(
@@ -122,14 +122,8 @@ class _eleccion extends State<eleccion> {
                 subtitle: 'Escribe el número de serie',
                 onTap: () => _open(const InputPage()),
               ),
-              if (userProfileId == 1)
+              if (puedeReportes)
                 MenuTile(
-                  icon: Icons.manage_accounts_outlined,
-                  title: 'Administrar usuarios',
-                  subtitle: 'Altas, bajas y permisos',
-                  onTap: () => _open(const AdminUsuarios()),
-                ),
-              MenuTile(
                 icon: Icons.bar_chart_rounded,
                 title: 'Reportes',
                 subtitle: 'Consulta reportes por cliente',

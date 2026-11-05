@@ -3,11 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/screens/reportes_resultados.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 class UpperCaseTextFormatter extends TextInputFormatter {
@@ -64,7 +64,7 @@ void mostrarPopupReportes(
   DateTime? fechaFinInicial,
   String? sucursalInicial,
 }) {
-  final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  Provider.of<AuthProvider>(context, listen: false).resetSession();
   // Se captura el Navigator ahora: el context del diálogo deja de existir al
   // cerrarlo y no debe usarse para navegar después (causaba
   // "_dependents.isEmpty").
@@ -73,9 +73,6 @@ void mostrarPopupReportes(
   showDialog<_ReporteResult>(
     context: context,
     builder: (_) => _ReportesDialog(
-      authToken: authProvider.authToken,
-      sessionCookie: authProvider.sessionCookie,
-      routeIdCookie: authProvider.routeIdCookie,
       clienteInicial: clienteInicial,
       fechaInicioInicial: fechaInicioInicial,
       fechaFinInicial: fechaFinInicial,
@@ -99,18 +96,12 @@ void mostrarPopupReportes(
 
 class _ReportesDialog extends StatefulWidget {
   const _ReportesDialog({
-    required this.authToken,
-    required this.sessionCookie,
-    required this.routeIdCookie,
     this.clienteInicial,
     this.fechaInicioInicial,
     this.fechaFinInicial,
     this.sucursalInicial,
   });
 
-  final String authToken;
-  final String sessionCookie;
-  final String routeIdCookie;
   final String? clienteInicial;
   final DateTime? fechaInicioInicial;
   final DateTime? fechaFinInicial;
@@ -165,21 +156,12 @@ class _ReportesDialogState extends State<_ReportesDialog> {
       if (!mounted) return;
       setState(() => _buscandoClientes = true);
 
-      final uri = Uri.parse(
-        "https://68.155.144.63:50000/b1s/v1/BusinessPartners?"
-        "\$filter=(contains(CardCode,'$input') or contains(CardName,'$input') or contains(CardForeignName,'$input')) and CardType eq 'cCustomer'",
-      );
 
       List<dynamic> nuevas = [];
       try {
-        final response = await http.get(
-          uri,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ${widget.authToken}',
-            'Cookie':
-                'B1SESSION=${widget.sessionCookie}; ROUTEID=${widget.routeIdCookie}',
-          },
+        final response = await Api.get(
+          '/app-montacargas/clientes',
+          {'q': input},
         ).timeout(_timeout);
 
         if (response.statusCode == 200) {
@@ -253,23 +235,17 @@ class _ReportesDialogState extends State<_ReportesDialog> {
       _error = null;
     });
 
-    final body = jsonEncode({
+    final body = {
       "cliente": clienteCode,
       "fecha1": _fmt.format(fechaInicio),
       "fecha2": _fmt.format(fechaFin),
       "sucursal": _sucursal,
-    });
+    };
 
-    final uri = Uri.parse("http://68.155.144.63:8081/api/llamadas-servicio");
 
     String error;
     try {
-      final response = await http
-          .post(
-            uri,
-            headers: {"Content-Type": "application/json"},
-            body: body,
-          )
+      final response = await Api.post('/app-montacargas/reporte-clientes', body)
           .timeout(_timeout);
 
       if (!mounted) return;

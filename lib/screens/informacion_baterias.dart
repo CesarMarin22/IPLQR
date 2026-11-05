@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:http/io_client.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/services/api.dart';
 import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InformacionBaterias extends StatefulWidget {
@@ -20,16 +20,6 @@ class InformacionBaterias extends StatefulWidget {
 class _InformacionBateriasState extends State<InformacionBaterias> {
   static const _sinInfo = 'No Contiene Información';
   static const _timeout = Duration(seconds: 25);
-
-  late final IOClient _ioClient = IOClient(
-    HttpClient()
-      ..badCertificateCallback =
-          (X509Certificate cert, String host, int port) => true,
-  );
-
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
 
   bool _loading = true;
   String? _error;
@@ -44,28 +34,20 @@ class _InformacionBateriasState extends State<InformacionBaterias> {
       _loading = false;
       _error = 'No hay un número de serie seleccionado.';
     } else {
-      _readAuth();
+      context.read<AuthProvider>().resetSession();
       fetchDataFromAPI(_numSerie);
     }
   }
 
   @override
   void dispose() {
-    _ioClient.close();
     super.dispose();
-  }
-
-  void _readAuth() {
-    final authProvider = context.read<AuthProvider>();
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
   }
 
   /// Recarga los datos (botón Reintentar / deslizar hacia abajo).
   Future<void> fetchData({bool showLoader = true}) async {
     if (_numSerie.isEmpty) return;
-    _readAuth();
+    context.read<AuthProvider>().resetSession();
     if (showLoader) {
       setState(() {
         _loading = true;
@@ -97,23 +79,12 @@ class _InformacionBateriasState extends State<InformacionBaterias> {
   }
 
   Future<void> fetchDataFromAPI(String numSerie) async {
-    final apiUrl = Uri.parse(
-      'https://68.155.144.63:50000/b1s/v1/Items?'
-      '\$select=U_MarcaB,U_ModeloBat,ForeignName,U_VoltajeB,U_CapacidadB,U_TipoB,User_Text&'
-      '\$filter=(ItemsGroupCode eq 430 or AssetGroup eq \'BAT\') and ForeignName eq \'$numSerie\'',
-    );
 
     String? error;
     Map<String, String>? info;
 
     try {
-      final response = await _ioClient.get(
-        apiUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      ).timeout(_timeout);
+      final response = await Api.get('/app-montacargas/bateria', {'serie': numSerie}).timeout(_timeout);
 
       if (!mounted) return;
 

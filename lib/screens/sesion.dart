@@ -59,7 +59,19 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await authProvider.login(username, password);
+      try {
+        await authProvider.login(username, password);
+      } on PasswordTemporalException {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        final cambiada = await _pedirCambioPassword(password);
+        if (!cambiada || !mounted) {
+          await authProvider.logout();
+          return;
+        }
+        setState(() => _isLoading = true);
+        await authProvider.cargarPermisos();
+      }
       if (!mounted) return;
       // Única navegación tras el login (antes se hacía dos veces y
       // provocaba el error "_dependents.isEmpty").
@@ -71,13 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _isLoading = false);
 
       String mensaje = 'Usuario y/o contraseña incorrectos.';
-      if (e is UserNotFoundException) {
-        mensaje = 'El usuario no existe.';
-      } else if (e is InvalidCredentialsException) {
-        mensaje = 'La contraseña es incorrecta.';
-      } else if (e is UserNotActiveException) {
-        mensaje = 'Tu usuario está inactivo. Contacta al administrador.';
-      } else if (e is NetworkException) {
+      if (e is AppException) {
         mensaje = e.message;
       }
 
@@ -97,6 +103,101 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     }
+  }
+
+  /// La Intranet dio una contraseña temporal: hay que cambiarla antes de entrar.
+  /// Devuelve true si se cambió.
+  Future<bool> _pedirCambioPassword(String actual) async {
+    final authProvider = context.read<AuthProvider>();
+    final nuevaCtrl = TextEditingController();
+    final confirmarCtrl = TextEditingController();
+    String? error;
+    bool guardando = false;
+
+    final resultado = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          Future<void> guardar() async {
+            final nueva = nuevaCtrl.text;
+            if (nueva.isEmpty || nueva != confirmarCtrl.text) {
+              setDialogState(() => error = 'Las contraseñas no coinciden.');
+              return;
+            }
+            setDialogState(() {
+              guardando = true;
+              error = null;
+            });
+            String? fallo;
+            try {
+              fallo = await authProvider.cambiarPassword(actual, nueva);
+            } catch (e) {
+              fallo = e is AppException ? e.message : 'No se pudo cambiar la contraseña.';
+            }
+            if (!dialogContext.mounted) return;
+            if (fallo == null) {
+              Navigator.of(dialogContext).pop(true);
+            } else {
+              setDialogState(() {
+                guardando = false;
+                error = fallo;
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Cambia tu contraseña'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Tienes una contraseña temporal. Escribe una nueva; es la '
+                    'misma que usarás en la Intranet.',
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: nuevaCtrl,
+                    obscureText: true,
+                    decoration:
+                        const InputDecoration(labelText: 'Contraseña nueva'),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: confirmarCtrl,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Confirmar contraseña'),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(error!, style: const TextStyle(color: AppColors.danger)),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: guardando
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: guardando ? null : guardar,
+                child: Text(guardando ? 'Guardando...' : 'Guardar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    nuevaCtrl.dispose();
+    confirmarCtrl.dispose();
+    return resultado == true;
   }
 
   void _showPrivacy() {
