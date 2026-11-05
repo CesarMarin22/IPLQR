@@ -295,8 +295,11 @@ class _DashboardScreenState extends State<DashboardScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return WillPopScope(
-      onWillPop: () => _goToLogin(context),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goToLogin(context);
+      },
       child: SafeArea(
         child: Scaffold(
           appBar: _buildAppBar(theme),

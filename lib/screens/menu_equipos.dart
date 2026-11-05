@@ -7,199 +7,95 @@ import 'package:proyecto_qr/screens/llamadas_servicio_equipos.dart';
 import 'package:proyecto_qr/screens/reporte_instalacion.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class menuEquipos extends StatefulWidget {
   const menuEquipos({super.key});
 
   @override
-  State<menuEquipos> createState() => _menuEquipos();
+  State<menuEquipos> createState() => _MenuEquiposState();
 }
 
-class _menuEquipos extends State<menuEquipos> {
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
+class _MenuEquiposState extends State<menuEquipos> {
+  String _serie = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // Se lee una sola vez (antes se leía AuthProvider con listen:true en build).
+    _serie = context.read<SerialNumberModel>().serialNumber;
+  }
+
+  void _open(Widget page) {
+    context.read<AuthProvider>().resetSession();
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  void _escanearOtro() {
+    context.read<SerialNumberModel>().setSerialNumber('');
+    // Volvemos al menú principal limpiando la pila (antes se apilaba un
+    // nuevo menú encima de las pantallas anteriores en cada escaneo).
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const eleccion()),
+      (route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-        toolbarHeight: 80,
-        title: Center(
-          child: Image.asset(
-            'assets/logo ipl_BLANCO.png',
-            width: 70,
-            height: 70,
-          ),
-        ),
+        toolbarHeight: 76,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
       ),
-      body: SingleChildScrollView(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 30),
-            child: Column(
-              children: [
-                const Text(
-                  'EQUIPOS',
-                  style: TextStyle(fontSize: 40),
-                ),
-                const SizedBox(height: 70),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const HomePage()));
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'INFORMACIÓN',
-                      style: TextStyle(fontSize: 20, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 25),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const FileViewerFromAPI(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'REPORTE DE INSTALACIÓN',
-                      style: TextStyle(fontSize: 15, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 25),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LlamadaServiciosEquipos(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'HISTORIAL DE SERVICIOS',
-                      style: TextStyle(fontSize: 15, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 50),
-                SizedBox(
-                  width: 200,
-                  height: 90,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Provider.of<SerialNumberModel>(context, listen: false)
-                          .setSerialNumber('');
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const eleccion(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'SCANEAR',
-                      style: TextStyle(fontSize: 20, color: Colors.white),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ],
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+          children: [
+            const Text(
+              'Equipos',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: AppColors.dark,
+              ),
             ),
-          ),
-        ),
-      ),
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-              ],
+            if (_serie.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Serie: $_serie',
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+            ],
+            const SizedBox(height: 20),
+            MenuTile(
+              icon: Icons.info_outline,
+              title: 'Información',
+              subtitle: 'Datos técnicos del equipo',
+              onTap: () => _open(const HomePage()),
             ),
-          ),
+            MenuTile(
+              icon: Icons.picture_as_pdf_outlined,
+              title: 'Reporte de instalación',
+              subtitle: 'Documento PDF del equipo',
+              onTap: () => _open(const FileViewerFromAPI()),
+            ),
+            MenuTile(
+              icon: Icons.history,
+              title: 'Historial de servicios',
+              subtitle: 'Órdenes de trabajo del equipo',
+              onTap: () => _open(const LlamadaServiciosEquipos()),
+            ),
+            const SizedBox(height: 28),
+            ElevatedButton.icon(
+              onPressed: _escanearOtro,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear otro artículo'),
+            ),
+          ],
         ),
       ),
+      bottomNavigationBar: const AppFooter(),
     );
   }
 }
@@ -215,8 +111,10 @@ class PdfViewerScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Visor de PDF'),
       ),
-      body: PDFView(
-        filePath: pdfPath,
+      body: SafeArea(
+        child: PDFView(
+          filePath: pdfPath,
+        ),
       ),
     );
   }

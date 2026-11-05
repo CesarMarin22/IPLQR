@@ -1,15 +1,18 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
+import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/escoger.dart';
 import 'package:proyecto_qr/screens/menu_baterias.dart';
 import 'package:proyecto_qr/screens/menu_cargadores.dart';
 import 'package:proyecto_qr/screens/menu_equipos.dart';
-import 'package:provider/provider.dart';
-import 'package:proyecto_qr/providers/serial_number.dart';
-import 'dart:io';
-import 'package:http/io_client.dart';
-import 'dart:convert';
-import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InputPage extends StatefulWidget {
   const InputPage({super.key});
@@ -19,16 +22,12 @@ class InputPage extends StatefulWidget {
 }
 
 class _InputPageState extends State<InputPage> {
+  static const _timeout = Duration(seconds: 25);
+
   final TextEditingController serialNumberController = TextEditingController();
   final FocusNode serialFocusNode = FocusNode();
 
-  bool botonHabilitado = false;
   bool _isLoading = false;
-
-  String authToken = '';
-  String tipo = '';
-  String sessionCookie = '';
-  String routeIdCoockie = '';
 
   @override
   void dispose() {
@@ -37,368 +36,77 @@ class _InputPageState extends State<InputPage> {
     super.dispose();
   }
 
-  void _showToast(
-    String message, {
-    Color backgroundColor = Colors.red,
-    Color textColor = Colors.white,
-  }) {
+  void _showToast(String message) {
     Fluttertoast.cancel();
     Fluttertoast.showToast(
       msg: message,
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
-      backgroundColor: backgroundColor,
-      textColor: textColor,
+      backgroundColor: AppColors.danger,
+      textColor: Colors.white,
       fontSize: 14,
     );
   }
 
-  void navigateTomenuEquipos() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const menuEquipos()),
-    ).then((_) {
-      _resetForm();
-    });
-  }
-
-  void navigateTomenuBaterias() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const menuBaterias()),
-    ).then((_) {
-      _resetForm();
-    });
-  }
-
-  void navigateTomenuCargadores() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const menuCargadores()),
-    ).then((_) {
-      _resetForm();
-    });
-  }
-
-  void _resetForm() {
-    serialNumberController.clear();
-    setState(() {
-      botonHabilitado = false;
-      _isLoading = false;
-    });
-  }
-
-  void mostrarErrorArticulo() {
-    setState(() {
-      _isLoading = false;
-      botonHabilitado = serialNumberController.text.trim().isNotEmpty;
-    });
-
-    _showToast(
-      'No se encontró un artículo válido con ese número de serie.',
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCoockie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F6F4),
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () {
-            Navigator.pop(context);
-          },
-        ),
-        title: Image.asset(
-          'assets/logo ipl_BLANCO.png',
-          width: 60,
-          height: 60,
-        ),
-      ),
-      body: Stack(
-        children: [
-          SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Búsqueda manual',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Color.fromARGB(255, 29, 29, 27),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Ingresa el número de serie para localizar el equipo, batería o cargador.',
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Color.fromARGB(255, 90, 90, 90),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color.fromARGB(20, 0, 0, 0),
-                          blurRadius: 18,
-                          offset: Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Row(
-                          children: [
-                            Icon(
-                              Icons.search,
-                              color: Color.fromARGB(255, 243, 138, 0),
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'Número de serie',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Color.fromARGB(255, 29, 29, 27),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        TextField(
-                          controller: serialNumberController,
-                          focusNode: serialFocusNode,
-                          textInputAction: TextInputAction.search,
-                          onChanged: (value) {
-                            setState(() {
-                              botonHabilitado = value.trim().isNotEmpty;
-                            });
-                          },
-                          onSubmitted: (value) {
-                            if (!_isLoading && value.trim().isNotEmpty) {
-                              _buscarSerie();
-                            }
-                          },
-                          decoration: InputDecoration(
-                            hintText: 'Ejemplo: ABC123456',
-                            prefixIcon: const Icon(Icons.qr_code_2_outlined),
-                            filled: true,
-                            fillColor: const Color(0xFFF7F7F7),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 18,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color.fromARGB(255, 220, 220, 220),
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide: const BorderSide(
-                                color: Color.fromARGB(255, 243, 138, 0),
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            onPressed: (botonHabilitado && !_isLoading)
-                                ? _buscarSerie
-                                : null,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  const Color.fromARGB(255, 243, 138, 0),
-                              foregroundColor: Colors.black,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            icon: const Icon(Icons.search),
-                            label: const Text(
-                              'Buscar equipo',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: OutlinedButton.icon(
-                            onPressed: _isLoading
-                                ? null
-                                : () {
-                                    Provider.of<SerialNumberModel>(
-                                      context,
-                                      listen: false,
-                                    ).setSerialNumber('');
-
-                                    Navigator.pushReplacement(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const eleccion(),
-                                      ),
-                                    );
-                                  },
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor:
-                                  const Color.fromARGB(255, 29, 29, 27),
-                              side: const BorderSide(
-                                color: Color.fromARGB(255, 29, 29, 27),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            icon: const Icon(Icons.qr_code_scanner),
-                            label: const Text(
-                              'Volver a escanear',
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: const Color.fromARGB(255, 255, 248, 235),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: const Color.fromARGB(255, 243, 138, 0),
-                      ),
-                    ),
-                    child: const Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Icon(
-                          Icons.info_outline,
-                          color: Color.fromARGB(255, 243, 138, 0),
-                        ),
-                        SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            'Usa esta opción cuando el código QR no esté disponible o no pueda leerse correctamente.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Color.fromARGB(255, 29, 29, 27),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_isLoading)
-            Container(
-              color: const Color.fromARGB(120, 255, 255, 255),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  color: Color.fromARGB(255, 243, 138, 0),
-                ),
-              ),
-            ),
-        ],
-      ),
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Colors.white,
-                  ),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _buscarSerie() {
+  Future<void> _buscarSerie() async {
     final serie = serialNumberController.text.trim();
-
     if (serie.isEmpty || _isLoading) return;
 
     FocusScope.of(context).unfocus();
 
-    Provider.of<SerialNumberModel>(context, listen: false)
-        .setSerialNumber(serie);
+    // Leer todo lo que depende de context antes del primer await.
+    context.read<SerialNumberModel>().setSerialNumber(serie);
+    final auth = context.read<AuthProvider>();
+    final navigator = Navigator.of(context);
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
-    _fetchDataFromAPI(serie);
+    String? error;
+    Widget? destino;
+    try {
+      destino = await _fetchDestino(
+        serie,
+        authToken: auth.authToken,
+        sessionCookie: auth.sessionCookie,
+        routeIdCookie: auth.routeIdCookie,
+      );
+      if (destino == null) {
+        error = 'No se encontró un artículo válido con ese número de serie.';
+      }
+    } on TimeoutException {
+      error = 'El servidor tardó demasiado en responder. Intenta de nuevo.';
+    } on _HttpStatusException catch (e) {
+      error =
+          'No fue posible consultar la información. Código: ${e.code}';
+    } catch (_) {
+      error = 'Ocurrió un error al consultar el número de serie.';
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    final page = destino;
+    if (page == null) {
+      _showToast(error ?? 'Ocurrió un error al consultar el número de serie.');
+      return;
+    }
+
+    await navigator.push(MaterialPageRoute(builder: (_) => page));
+    if (!mounted) return;
+    serialNumberController.clear();
   }
 
-  Future<void> _fetchDataFromAPI(String serie) async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true;
-    };
-
+  /// Consulta SAP y devuelve el menú a abrir, o null si no es válido.
+  Future<Widget?> _fetchDestino(
+    String serie, {
+    required String authToken,
+    required String sessionCookie,
+    required String routeIdCookie,
+  }) async {
+    final client = HttpClient()
+      ..connectionTimeout = _timeout
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
     final ioClient = IOClient(client);
 
     final apiUrl = Uri.parse(
@@ -413,60 +121,189 @@ class _InputPageState extends State<InputPage> {
         apiUrl,
         headers: {
           'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCoockie',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
 
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final decodedResponse = json.decode(response.body);
-
-        bool articuloValido = false;
-
-        for (var item in decodedResponse['value']) {
-          if (item['ItemGroups'] != null) {
-            articuloValido = true;
-
-            final items = item['ItemGroups'];
-            tipo = items['GroupName'] ?? '';
-            final assetGroup = item['Items']['AssetGroup'] ?? '';
-
-            if (tipo == 'MONTACARGAS' || assetGroup == 'MO') {
-              setState(() => _isLoading = false);
-              navigateTomenuEquipos();
-              return;
-            } else if (tipo == 'BATERIAS' || assetGroup == 'BAT') {
-              setState(() => _isLoading = false);
-              navigateTomenuBaterias();
-              return;
-            } else if (tipo == 'CARGADORES' || assetGroup == 'CAR') {
-              setState(() => _isLoading = false);
-              navigateTomenuCargadores();
-              return;
-            }
-          }
-        }
-
-        if (!articuloValido) {
-          mostrarErrorArticulo();
-        } else {
-          mostrarErrorArticulo();
-        }
-      } else {
-        setState(() {
-          _isLoading = false;
-        });
-        _showToast(
-          'No fue posible consultar la información. Código: ${response.statusCode}',
-        );
+      if (response.statusCode != 200) {
+        throw _HttpStatusException(response.statusCode);
       }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-      _showToast('Ocurrió un error al consultar el número de serie.');
+
+      final decoded = json.decode(response.body);
+      final values = decoded is Map ? decoded['value'] : null;
+      if (values is! List) return null;
+
+      for (final item in values) {
+        if (item is! Map || item['ItemGroups'] == null) continue;
+
+        final groups = item['ItemGroups'];
+        final items = item['Items'];
+        final tipo = groups is Map ? (groups['GroupName'] ?? '') : '';
+        final assetGroup = items is Map ? (items['AssetGroup'] ?? '') : '';
+
+        if (tipo == 'MONTACARGAS' || assetGroup == 'MO') {
+          return const menuEquipos();
+        } else if (tipo == 'BATERIAS' || assetGroup == 'BAT') {
+          return const menuBaterias();
+        } else if (tipo == 'CARGADORES' || assetGroup == 'CAR') {
+          return const menuCargadores();
+        }
+      }
+      return null;
+    } finally {
+      ioClient.close();
     }
   }
+
+  void _volverAlMenu() {
+    context.read<SerialNumberModel>().setSerialNumber('');
+    final navigator = Navigator.of(context);
+    // Esta pantalla se abre desde el menú (eleccion): volver a él sin
+    // apilar un segundo menú.
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      navigator.pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const eleccion()),
+        (route) => false,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 72,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 52),
+      ),
+      body: SafeArea(
+        child: Stack(
+          children: [
+            ListView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+              children: [
+                const Text(
+                  'Búsqueda manual',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.dark,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Ingresa el número de serie para localizar el equipo, batería o cargador.',
+                  style: TextStyle(fontSize: 14, color: Colors.black54),
+                ),
+                const SizedBox(height: 20),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextField(
+                          controller: serialNumberController,
+                          focusNode: serialFocusNode,
+                          enabled: !_isLoading,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          textInputAction: TextInputAction.search,
+                          onSubmitted: (_) => _buscarSerie(),
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Número de serie',
+                            hintText: 'Ejemplo: ABC123456',
+                            prefixIcon: Icon(Icons.qr_code_2_outlined),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Solo este botón se reconstruye al escribir.
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: serialNumberController,
+                          builder: (context, value, _) {
+                            final habilitado =
+                                value.text.trim().isNotEmpty && !_isLoading;
+                            return ElevatedButton.icon(
+                              onPressed: habilitado ? _buscarSerie : null,
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.5,
+                                        color: AppColors.dark,
+                                      ),
+                                    )
+                                  : const Icon(Icons.search),
+                              label: Text(
+                                _isLoading ? 'Buscando...' : 'Buscar equipo',
+                              ),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _isLoading ? null : _volverAlMenu,
+                          icon: const Icon(Icons.qr_code_scanner),
+                          label: const Text(
+                            'Volver a escanear',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8EB),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.orange),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.info_outline, color: AppColors.orange),
+                      SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Usa esta opción cuando el código QR no esté disponible o no pueda leerse correctamente.',
+                          style: TextStyle(fontSize: 14, color: AppColors.dark),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_isLoading)
+              const Positioned.fill(
+                child: ModalBarrier(
+                  dismissible: false,
+                  color: Color(0x33FFFFFF),
+                ),
+              ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: const AppFooter(),
+    );
+  }
+}
+
+class _HttpStatusException implements Exception {
+  const _HttpStatusException(this.code);
+  final int code;
 }

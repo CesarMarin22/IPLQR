@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:proyecto_qr/utils/popup_reportes.dart';
 import 'package:proyecto_qr/screens/escoger.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class ReporteResultadosScreen extends StatefulWidget {
   final List<dynamic> resultados;
@@ -42,11 +43,19 @@ class _ReporteResultadosScreenState extends State<ReporteResultadosScreen> {
     Colors.pink,
   ];
 
+  // Calculados una sola vez (antes se recalculaban en cada build).
+  late final List<String> _meses;
+  late final List<String> _tipos;
+  late final String _rangoFechas;
+
   @override
   void initState() {
     super.initState();
     groupedData = _agruparPorMesYTipo(widget.resultados);
     _asignarColoresPorTipo();
+    _meses = _obtenerMesesOrdenados();
+    _tipos = _obtenerTiposServicio();
+    _rangoFechas = _formatearFechaRango(widget.fechaInicio, widget.fechaFin);
   }
 
   Map<String, Map<String, int>> _agruparPorMesYTipo(List<dynamic> data) {
@@ -59,7 +68,7 @@ class _ReporteResultadosScreenState extends State<ReporteResultadosScreen> {
                 .parse(item['createDate']);
 
         final String mes = DateFormat('yyyy-MM').format(fecha);
-        final String tipo = item['Name'] ?? 'Desconocido';
+        final String tipo = item['Name']?.toString() ?? 'Desconocido';
 
         resultado[mes] ??= {};
         resultado[mes]![tipo] = (resultado[mes]![tipo] ?? 0) + 1;
@@ -98,28 +107,30 @@ class _ReporteResultadosScreenState extends State<ReporteResultadosScreen> {
     return "Del ${formato.format(inicio)} al ${formato.format(fin)}";
   }
 
+  String get _sucursalTexto =>
+      widget.sucursal == "*" ? "Todas las sucursales (*)" : widget.sucursal;
+
+  void _volverAlMenu() {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const eleccion()),
+      (route) => false,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final meses = _obtenerMesesOrdenados();
-    final tipos = _obtenerTiposServicio();
-
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const eleccion()),
-              (route) => false,
-            );
-          },
+          tooltip: 'Volver al menú',
+          onPressed: _volverAlMenu,
         ),
         title: const Text('Resultados del Reporte'),
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
         actions: [
           PopupMenuButton<int>(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.tune),
             tooltip: 'Opciones de reporte',
             onSelected: (value) {
               mostrarPopupReportes(
@@ -130,147 +141,131 @@ class _ReporteResultadosScreenState extends State<ReporteResultadosScreen> {
                 sucursalInicial: widget.sucursal,
               );
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(value: 1, child: Text("Cambiar cliente")),
-              const PopupMenuItem(value: 2, child: Text("Cambiar fechas")),
-              const PopupMenuItem(value: 3, child: Text("Cambiar sucursal")),
-              const PopupMenuItem(value: 4, child: Text("Cambiar todo")),
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 1, child: Text("Cambiar cliente")),
+              PopupMenuItem(value: 2, child: Text("Cambiar fechas")),
+              PopupMenuItem(value: 3, child: Text("Cambiar sucursal")),
+              PopupMenuItem(value: 4, child: Text("Cambiar todo")),
             ],
           ),
         ],
       ),
-      body: groupedData.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.insert_chart_outlined,
-                      size: 64,
-                      color: Colors.grey,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'No se encontraron datos para mostrar',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Cliente: ${widget.clienteNombre}\n'
-                      'Sucursal: ${widget.sucursal}\n'
-                      '${_formatearFechaRango(widget.fechaInicio, widget.fechaFin)}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ],
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            _buildResumen(),
+            const SizedBox(height: 8),
+            if (groupedData.isEmpty)
+              const Card(
+                child: EmptyState(
+                  icon: Icons.insert_chart_outlined,
+                  message: 'No se encontraron datos para mostrar',
                 ),
-              ),
-            )
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final chartWidth = meses.length * tipos.length * 25.0;
-                final screenWidth = constraints.maxWidth;
+              )
+            else
+              _buildGrafica(),
+          ],
+        ),
+      ),
+      bottomNavigationBar: const AppFooter(),
+    );
+  }
 
-                return Column(
-                  children: [
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Cliente: ${widget.clienteNombre}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Sucursal: ${widget.sucursal == "*" ? "Todas las sucursales (*)" : widget.sucursal}',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _formatearFechaRango(
-                              widget.fechaInicio,
-                              widget.fechaFin,
-                            ),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Text('Barras'),
-                        Switch(
-                          value: mostrarBarChart,
-                          onChanged: (value) =>
-                              setState(() => mostrarBarChart = value),
-                        ),
-                        const Text('Líneas'),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      spacing: 10,
-                      runSpacing: 6,
-                      children: tipoColores.entries.map((e) {
-                        return Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(width: 12, height: 12, color: e.value),
-                            const SizedBox(width: 4),
-                            Text(
-                              e.key,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: SizedBox(
-                          width: chartWidth > screenWidth
-                              ? chartWidth
-                              : screenWidth,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: mostrarBarChart
-                                ? _buildBarChart(meses, tipos)
-                                : _buildLineChart(meses, tipos),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+  Widget _buildResumen() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: Column(
+          children: [
+            InfoRow(label: 'Cliente', value: widget.clienteNombre),
+            InfoRow(label: 'Sucursal', value: _sucursalTexto),
+            InfoRow(label: 'Periodo', value: _rangoFechas),
+            InfoRow(
+              label: 'Registros',
+              value: widget.resultados.length.toString(),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrafica() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Barras'),
+                    icon: Icon(Icons.bar_chart),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Líneas'),
+                    icon: Icon(Icons.show_chart),
+                  ),
+                ],
+                selected: {mostrarBarChart},
+                onSelectionChanged: (s) =>
+                    setState(() => mostrarBarChart = s.first),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                for (final e in tipoColores.entries)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: e.value,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(e.key, style: const TextStyle(fontSize: 12)),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 320,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final chartWidth = _meses.length * _tipos.length * 25.0;
+                  final screenWidth = constraints.maxWidth;
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(
+                      width: chartWidth > screenWidth ? chartWidth : screenWidth,
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 8, top: 8),
+                        child: mostrarBarChart
+                            ? _buildBarChart(_meses, _tipos)
+                            : _buildLineChart(_meses, _tipos),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

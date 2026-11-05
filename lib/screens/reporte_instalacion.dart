@@ -1,13 +1,18 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'dart:io' as io;
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io' as io;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:http/io_client.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_pdfview/flutter_pdfview.dart';
-import 'package:rive/rive.dart';
+import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
+import 'package:rive/rive.dart';
+
+const _timeout = Duration(seconds: 25);
 
 class FileViewerFromAPI extends StatefulWidget {
   const FileViewerFromAPI({super.key});
@@ -23,10 +28,23 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
   bool _isLoading = true;
   String? localFilePath;
 
+  /// Mensaje para estado vacío / error (null mientras carga o si hay PDF).
+  String? _message;
+  bool _isError = false;
+
   late final FileLoader _riveLoader = FileLoader.fromAsset(
     'assets/cargando_imagen.riv',
     riveFactory: Factory.rive,
   );
+
+  /// Un solo cliente para las tres peticiones; se cierra en dispose.
+  IOClient? _client;
+  IOClient get _http => _client ??= IOClient(
+        io.HttpClient()
+          ..connectionTimeout = _timeout
+          ..badCertificateCallback =
+              (io.X509Certificate cert, String host, int port) => true,
+      );
 
   @override
   void initState() {
@@ -34,33 +52,43 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
     fetchData();
   }
 
+  @override
+  void dispose() {
+    _client?.close();
+    _riveLoader.dispose();
+    super.dispose();
+  }
+
   Future<void> fetchData() async {
-    final numSerie =
-        Provider.of<SerialNumberModel>(context, listen: false).serialNumber;
+    final numSerie = context.read<SerialNumberModel>().serialNumber;
+
+    if (!_isLoading) {
+      setState(() {
+        _isLoading = true;
+        _message = null;
+        _isError = false;
+        localFilePath = null;
+      });
+    }
 
     if (numSerie.isNotEmpty) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final authProvider = context.read<AuthProvider>();
       sessionCookie = authProvider.sessionCookie;
       routeIdCookie = authProvider.routeIdCookie;
       authToken = authProvider.authToken;
 
       await fetchAttachmentEntry(numSerie);
     } else {
-      setState(() {
-        _isLoading = false;
-      });
+      showNoDocumentDialog();
     }
   }
 
+  Map<String, String> get _headers => {
+        'Authorization': 'Bearer $authToken',
+        'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
+      };
+
   Future<void> fetchAttachmentEntry(String numSerie) async {
-    final client = io.HttpClient();
-    client.badCertificateCallback =
-        (io.X509Certificate cert, String host, int port) {
-      return true;
-    };
-
-    final ioClient = IOClient(client);
-
     final firstQueryUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/CustomerEquipmentCards?'
       '\$select=AttachmentEntry&'
@@ -68,74 +96,63 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
     );
 
     try {
-      final response = await ioClient.get(
-        firstQueryUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      );
+      final response =
+          await _http.get(firstQueryUrl, headers: _headers).timeout(_timeout);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
+        final data = json.decode(response.body);
+        final values = data is Map ? data['value'] : null;
 
-        if (data['value'] == null || data['value'].isEmpty) {
+        if (values is! List || values.isEmpty || values.first is! Map) {
           showNoDocumentDialog();
           return;
         }
 
-        final attachmentEntry = data['value'][0]['AttachmentEntry'];
+        final attachmentEntry = (values.first as Map)['AttachmentEntry'];
 
-        if (attachmentEntry == null) {
-          showNoDocumentDialog();
+        if (attachmentEntry is num) {
+          await fetchFileNameAndOpen(attachmentEntry.toInt());
         } else {
-          await fetchFileNameAndOpen(attachmentEntry);
+          showNoDocumentDialog();
         }
       } else {
         showErrorDialog(
-          'Error en la consulta de AttachmentEntry: ${response.statusCode}',
+          'No se pudo consultar el reporte (código ${response.statusCode}).',
         );
       }
+    } on TimeoutException {
+      showErrorDialog(_timeoutMsg);
     } catch (error) {
-      showErrorDialog('Error al consultar AttachmentEntry: $error');
-    } finally {
-      if (mounted && localFilePath == null) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      debugPrint('Error AttachmentEntry: $error');
+      showErrorDialog(_networkMsg);
     }
   }
 
   Future<void> fetchFileNameAndOpen(int attachmentEntry) async {
-    final client = io.HttpClient();
-    client.badCertificateCallback =
-        (io.X509Certificate cert, String host, int port) {
-      return true;
-    };
-
-    final ioClient = IOClient(client);
-
     final secondQueryUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/Attachments2?\$filter=AbsoluteEntry eq $attachmentEntry',
     );
 
     try {
-      final response = await ioClient.get(
-        secondQueryUrl,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      );
+      final response =
+          await _http.get(secondQueryUrl, headers: _headers).timeout(_timeout);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-        final attachmentLines = data['value'][0]['Attachments2_Lines'];
+        final data = json.decode(response.body);
+        final values = data is Map ? data['value'] : null;
+        final first = values is List && values.isNotEmpty && values.first is Map
+            ? values.first as Map
+            : null;
+        final attachmentLines = first?['Attachments2_Lines'];
 
-        if (attachmentLines != null && attachmentLines.isNotEmpty) {
-          final fileName = attachmentLines[0]['FileName'];
-          final fileExtension = attachmentLines[0]['FileExtension'];
+        if (attachmentLines is List &&
+            attachmentLines.isNotEmpty &&
+            attachmentLines.first is Map) {
+          final line = attachmentLines.first as Map;
+          final fileName = line['FileName'];
+          final fileExtension = line['FileExtension'];
 
           if (fileName != null && fileExtension != null) {
             final fileUrl = Uri.parse(
@@ -150,29 +167,21 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
         }
       } else {
         showErrorDialog(
-          'Error al obtener FileName y FileExtension: ${response.statusCode}',
+          'No se pudo obtener el archivo (código ${response.statusCode}).',
         );
       }
+    } on TimeoutException {
+      showErrorDialog(_timeoutMsg);
     } catch (error) {
-      showErrorDialog('Error al obtener el nombre del archivo: $error');
+      debugPrint('Error Attachments2: $error');
+      showErrorDialog(_networkMsg);
     }
   }
 
   Future<void> downloadAndDisplayFile(Uri fileUrl) async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    final client = io.HttpClient();
-    client.badCertificateCallback =
-        (io.X509Certificate cert, String host, int port) {
-      return true;
-    };
-
-    final ioClient = IOClient(client);
-
     try {
-      final response = await ioClient.get(fileUrl);
+      final response = await _http.get(fileUrl).timeout(_timeout);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
         final directory = await getTemporaryDirectory();
@@ -188,55 +197,40 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
           _isLoading = false;
         });
       } else {
-        showErrorDialog('Error al descargar el archivo');
+        showErrorDialog('Error al descargar el archivo.');
       }
+    } on TimeoutException {
+      showErrorDialog(_timeoutMsg);
     } catch (error) {
-      showErrorDialog('Hubo un problema al descargar el archivo: $error');
+      debugPrint('Error descarga: $error');
+      showErrorDialog('Hubo un problema al descargar el archivo.');
     }
   }
 
+  static const _timeoutMsg = 'El servidor tardó demasiado en responder.\n'
+      'Revisa tu conexión e inténtalo de nuevo.';
+  static const _networkMsg = 'No se pudo conectar con el servidor.\n'
+      'Revisa tu conexión e inténtalo de nuevo.';
+
+  /// Antes mostraba un diálogo y dejaba el texto "Archivo descargado y
+  /// abierto." de fondo; ahora muestra un estado vacío en la pantalla.
   void showNoDocumentDialog() {
     if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Sin Documento'),
-          content: const Text('No hay documento para mostrar.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    setState(() {
+      _isLoading = false;
+      _isError = false;
+      _message = 'No hay reporte de instalación para este equipo.';
+    });
   }
 
   void showErrorDialog(String message) {
     if (!mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Error'),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
+    setState(() {
+      _isLoading = false;
+      _isError = true;
+      _message = message;
+      localFilePath = null;
+    });
   }
 
   Widget _buildLoadingAnimation() {
@@ -248,10 +242,8 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
           fileLoader: _riveLoader,
           builder: (context, state) {
             return switch (state) {
-              RiveLoading() => const CircularProgressIndicator(),
-              RiveFailed() => Text(
-                  'Error al cargar animación: ${state.error}',
-                ),
+              RiveLoading() => const Center(child: CircularProgressIndicator()),
+              RiveFailed() => const Center(child: CircularProgressIndicator()),
               RiveLoaded() => RiveWidget(
                   controller: state.controller,
                   fit: Fit.contain,
@@ -263,77 +255,33 @@ class _FileViewerFromAPIState extends State<FileViewerFromAPI> {
     );
   }
 
-  @override
-  void dispose() {
-    _riveLoader.dispose();
-    super.dispose();
+  Widget _buildBody() {
+    if (_isLoading) return _buildLoadingAnimation();
+    final path = localFilePath;
+    if (path != null) {
+      return PDFView(
+        filePath: path,
+        onError: (error) {
+          debugPrint('Error PDFView: $error');
+          showErrorDialog('No se pudo abrir el documento.');
+        },
+      );
+    }
+    return SingleChildScrollView(
+      child: EmptyState(
+        message: _message ?? 'No hay documento para mostrar.',
+        icon: _isError ? Icons.cloud_off_outlined : Icons.description_outlined,
+        onRetry: fetchData,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(65),
-        child: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
-        ),
-      ),
-      body: _isLoading
-          ? _buildLoadingAnimation()
-          : localFilePath != null
-              ? PDFView(
-                  filePath: localFilePath!,
-                )
-              : const Center(
-                  child: Text('Archivo descargado y abierto.'),
-                ),
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          Navigator.pop(context);
-        },
-        backgroundColor: Colors.red,
-        foregroundColor: Colors.white,
-        child: const Icon(Icons.arrow_back),
-      ),
+      appBar: AppBar(title: const Text('Reporte de instalación')),
+      body: SafeArea(child: _buildBody()),
+      bottomNavigationBar: const AppFooter(),
     );
   }
 }

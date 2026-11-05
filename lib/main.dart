@@ -7,6 +7,7 @@ import 'package:proyecto_qr/screens/sesion.dart';
 import 'dart:io';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:rive/rive.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class MyHttpOverrides extends HttpOverrides {
   @override
@@ -40,9 +41,12 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      title: "Proyecto QR",
-      home: LoginScreen(),
+    return MaterialApp(
+      title: 'IPLQR',
+      navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: appMessengerKey,
+      theme: AppTheme.light,
+      home: const LoginScreen(),
       debugShowCheckedModeBanner: false,
     );
   }

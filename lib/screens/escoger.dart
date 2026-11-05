@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/admin_usuarios.dart';
 import 'package:proyecto_qr/screens/lector_qr.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'lector_manual.dart';
-import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:provider/provider.dart';
-import 'dart:io';
-import 'package:http/io_client.dart';
-import 'package:proyecto_qr/providers/serial_number.dart';
-import 'dart:async';
+import 'package:proyecto_qr/theme/app_theme.dart';
 import 'package:proyecto_qr/utils/popup_reportes.dart';
+import 'lector_manual.dart';
 
 class eleccion extends StatefulWidget {
   const eleccion({Key? key}) : super(key: key);
@@ -19,275 +17,148 @@ class eleccion extends StatefulWidget {
 }
 
 class _eleccion extends State<eleccion> {
-  String authToken = '';
-  String sessionCookie = '';
-  String routeIdCookie = '';
+  bool _closing = false;
 
   @override
-  Widget build(BuildContext context) {
-    Provider.of<SerialNumberModel>(context, listen: false).setSerialNumber('');
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
-    final userProfileId = authProvider.userProfileId;
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-        toolbarHeight: 80,
-        title: Center(
-          child: Image.asset(
-            'assets/logo ipl_BLANCO.png',
-            width: 70,
-            height: 70,
+  void initState() {
+    super.initState();
+    // Limpiar el número de serie al entrar al menú (antes se hacía en build).
+    context.read<SerialNumberModel>().setSerialNumber('');
+  }
+
+  void _open(Widget page) {
+    context.read<AuthProvider>().resetSession();
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que deseas salir?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
           ),
-        ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            child: const Text('Salir'),
+          ),
+        ],
       ),
-      body: SingleChildScrollView(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 30),
-            child: Column(
-              children: [
-                const Text(
-                  '¿QUE DESEAS HACER?',
-                  style: TextStyle(fontSize: 30),
-                ),
-                const SizedBox(height: 100),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const QRScannerPage()),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'LEER QR',
-                      style: TextStyle(fontSize: 20, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const InputPage()),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'INGRESAR ARTICULO MANUALMENTE',
-                      style: TextStyle(fontSize: 15, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 40),
-                if (userProfileId == 1)
-                  SizedBox(
-                    width: 200,
-                    height: 60,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (context) => const AdminUsuarios()),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          side: const BorderSide(color: Colors.black, width: 5),
-                        ),
-                      ),
-                      child: const Text(
-                        'ADMIN USUARIOS',
-                        style: TextStyle(fontSize: 20, color: Colors.black),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                const SizedBox(height: 40),
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () => mostrarPopupReportes(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'REPORTES',
-                      style: TextStyle(fontSize: 20, color: Colors.black),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 80),
-                SizedBox(
-                  width: 200,
-                  height: 90,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      await logout();
-                      Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => const LoginScreen()),
-                        (Route<dynamic> route) => false,
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'CERRAR SESIÓN',
-                      style: TextStyle(fontSize: 20, color: Colors.white),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w300,
-                      fontSize: 12.0,
-                      color: Colors.white),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w300,
-                      fontSize: 12.0,
-                      color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _closing = true);
+    final authProvider = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    final cerradoEnSap = await authProvider.logout();
+
+    // Primero navegamos y después avisamos con un SnackBar global; así no
+    // queda un diálogo encima de una pantalla que se está destruyendo.
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(cerradoEnSap
+            ? 'Sesión cerrada correctamente'
+            : 'Sesión cerrada (sin respuesta del servidor)'),
       ),
     );
   }
 
-  Future<void> logout() async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) => true;
-    final ioClient = IOClient(client);
-    final url = Uri.parse('https://68.155.144.63:50000/b1s/v1/Logout');
+  @override
+  Widget build(BuildContext context) {
+    final userProfileId = context.select<AuthProvider, int?>(
+      (p) => p.userProfileId,
+    );
 
-    try {
-      final response = await ioClient.get(
-        url,
-        headers: {
-          'Authorization': 'Bearer $authToken',
-          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
-        },
-      );
-
-      if (response.statusCode == 204) {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Sesión cerrada exitosamente'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+    return PopScope(
+      // Evita salir del menú con "atrás" por accidente.
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmLogout();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          automaticallyImplyLeading: false,
+          toolbarHeight: 76,
+          title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
+        ),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+            children: [
+              const Text(
+                '¿Qué deseas hacer?',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.dark,
                 ),
-              ],
-            );
-          },
-        );
-      } else {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: const Text('Error al cerrar sesión'),
-              content: Text('Código de error: \${response.statusCode}'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Selecciona una opción',
+                style: TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+              const SizedBox(height: 20),
+              MenuTile(
+                icon: Icons.qr_code_scanner,
+                title: 'Leer QR',
+                subtitle: 'Escanea la etiqueta del artículo',
+                onTap: () => _open(const QRScannerPage()),
+              ),
+              MenuTile(
+                icon: Icons.keyboard_alt_outlined,
+                title: 'Ingresar artículo manualmente',
+                subtitle: 'Escribe el número de serie',
+                onTap: () => _open(const InputPage()),
+              ),
+              if (userProfileId == 1)
+                MenuTile(
+                  icon: Icons.manage_accounts_outlined,
+                  title: 'Administrar usuarios',
+                  subtitle: 'Altas, bajas y permisos',
+                  onTap: () => _open(const AdminUsuarios()),
                 ),
-              ],
-            );
-          },
-        );
-      }
-    } catch (error) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Error de red al cerrar sesión'),
-            content: Text('Error: $error'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('OK'),
+              MenuTile(
+                icon: Icons.bar_chart_rounded,
+                title: 'Reportes',
+                subtitle: 'Consulta reportes por cliente',
+                onTap: () {
+                  context.read<AuthProvider>().resetSession();
+                  mostrarPopupReportes(context);
+                },
+              ),
+              const SizedBox(height: 28),
+              OutlinedButton.icon(
+                onPressed: _closing ? null : _confirmLogout,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.danger,
+                  side: const BorderSide(color: AppColors.danger, width: 1.5),
+                ),
+                icon: _closing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.logout),
+                label: Text(_closing ? 'Cerrando sesión...' : 'Cerrar sesión'),
               ),
             ],
-          );
-        },
-      );
-    }
+          ),
+        ),
+        bottomNavigationBar: const AppFooter(),
+      ),
+    );
   }
 }

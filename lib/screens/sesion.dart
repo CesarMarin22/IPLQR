@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:rive/rive.dart';
 import 'package:proyecto_qr/screens/escoger.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
+import 'package:rive/rive.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,8 +13,9 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _usernameController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _passwordFocus = FocusNode();
 
   late final FileLoader _riveLoader = FileLoader.fromAsset(
     'assets/cargando_imagen.riv',
@@ -21,307 +23,251 @@ class _LoginScreenState extends State<LoginScreen> {
   );
 
   bool _showPassword = false;
-  bool _isButtonDisabled = true;
   bool _isLoading = false;
 
-  Widget _buildLoadingScreen() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+  bool get _canSubmit =>
+      _usernameController.text.trim().isNotEmpty &&
+      _passwordController.text.isNotEmpty &&
+      !_isLoading;
 
-    final size = (screenWidth * 0.75).clamp(280.0, 420.0);
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Center(
-        child: SizedBox(
-          width: size,
-          height: screenHeight * 0.38,
-          child: RiveWidgetBuilder(
-            fileLoader: _riveLoader,
-            builder: (context, state) {
-              return switch (state) {
-                RiveLoading() => const CircularProgressIndicator(),
-                RiveFailed() =>
-                  Text('Error al cargar animación: ${state.error}'),
-                RiveLoaded() => Transform.scale(
-                    scale: 1.6,
-                    child: RiveWidget(
-                      controller: state.controller,
-                      fit: Fit.contain,
-                      alignment: Alignment.center,
-                    ),
-                  ),
-              };
-            },
-          ),
-        ),
-      ),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _usernameController.addListener(_refresh);
+    _passwordController.addListener(_refresh);
   }
 
-  Future<void> _attemptLogin(
-    AuthProvider authProvider,
-    String username,
-    String password,
-    BuildContext context,
-  ) async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      await authProvider.login(username, password, context);
-
-      if (!mounted) return;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const eleccion()),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-      });
-
-      String mensaje = 'Usuario y/o contraseña incorrectos.';
-
-      if (e is UserNotFoundException) {
-        mensaje = 'El usuario es incorrecto.';
-      } else if (e is InvalidCredentialsException) {
-        mensaje = 'La contraseña es incorrecta.';
-      }
-
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Text('Error de inicio de sesión'),
-            content: Text(mensaje),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
-    }
-  }
+  void _refresh() => setState(() {});
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _passwordFocus.dispose();
     _riveLoader.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+  Future<void> _attemptLogin() async {
+    if (!_canSubmit) return;
+    FocusScope.of(context).unfocus();
 
-    return _isLoading
-        ? _buildLoadingScreen()
-        : Scaffold(
-            backgroundColor: const Color.fromARGB(255, 247, 246, 244),
-            body: Center(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(20.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/logo_ipl_negro.png',
-                        width: 200,
-                        height: 200,
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Inicio de Sesión',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Color.fromARGB(255, 243, 138, 0),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      TextFormField(
-                        controller: _usernameController,
-                        style: const TextStyle(
-                          color: Color.fromARGB(255, 0, 0, 0),
-                        ),
-                        cursorColor: const Color.fromARGB(255, 243, 138, 0),
-                        onChanged: (value) {
-                          setState(() {
-                            _isButtonDisabled = value.isEmpty ||
-                                _passwordController.text.isEmpty;
-                          });
-                        },
-                        decoration: InputDecoration(
-                          labelText: 'Usuario',
-                          labelStyle: const TextStyle(
-                            color: Color.fromARGB(255, 0, 0, 0),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.person,
-                            color: Color.fromARGB(255, 29, 29, 27),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                            borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 243, 138, 0),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                            borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 0, 0, 0),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _passwordController,
-                        style: const TextStyle(
-                          color: Color.fromARGB(255, 0, 0, 0),
-                        ),
-                        cursorColor: const Color.fromARGB(255, 243, 138, 0),
-                        onChanged: (value) {
-                          setState(() {
-                            _isButtonDisabled =
-                                _usernameController.text.isEmpty ||
-                                    value.isEmpty;
-                          });
-                        },
-                        decoration: InputDecoration(
-                          labelText: 'Contraseña',
-                          labelStyle: const TextStyle(
-                            color: Color.fromARGB(255, 0, 0, 0),
-                          ),
-                          prefixIcon: const Icon(
-                            Icons.lock,
-                            color: Color.fromARGB(255, 29, 29, 27),
-                          ),
-                          suffixIcon: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _showPassword = !_showPassword;
-                              });
-                            },
-                            child: Icon(
-                              _showPassword
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                            borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 243, 138, 0),
-                            ),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                            borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 0, 0, 0),
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 20.0,
-                            horizontal: 10.0,
-                          ),
-                        ),
-                        obscureText: !_showPassword,
-                      ),
-                      const SizedBox(height: 20),
-                      ElevatedButton(
-                        onPressed: _isButtonDisabled
-                            ? null
-                            : () async {
-                                final username = _usernameController.text;
-                                final password = _passwordController.text;
+    final authProvider = context.read<AuthProvider>();
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
 
-                                if (username.isEmpty || password.isEmpty) {
-                                  return;
-                                }
+    setState(() => _isLoading = true);
 
-                                await _attemptLogin(
-                                  authProvider,
-                                  username,
-                                  password,
-                                  context,
-                                );
-                              },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color.fromARGB(255, 243, 138, 0),
-                        ),
-                        child: const Text(
-                          'Iniciar Sesión',
-                          style: TextStyle(color: Colors.black),
-                        ),
+    try {
+      await authProvider.login(username, password);
+      if (!mounted) return;
+      // Única navegación tras el login (antes se hacía dos veces y
+      // provocaba el error "_dependents.isEmpty").
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const eleccion()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      String mensaje = 'Usuario y/o contraseña incorrectos.';
+      if (e is UserNotFoundException) {
+        mensaje = 'El usuario no existe.';
+      } else if (e is InvalidCredentialsException) {
+        mensaje = 'La contraseña es incorrecta.';
+      } else if (e is UserNotActiveException) {
+        mensaje = 'Tu usuario está inactivo. Contacta al administrador.';
+      } else if (e is NetworkException) {
+        mensaje = e.message;
+      }
+
+      showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          icon: const Icon(Icons.error_outline,
+              color: AppColors.danger, size: 40),
+          title: const Text('No se pudo iniciar sesión'),
+          content: Text(mensaje, textAlign: TextAlign.center),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _showPrivacy() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text(
+          'AVISO DE PRIVACIDAD INTEGRAL',
+          style: TextStyle(color: AppColors.orangeDark, fontSize: 18),
+        ),
+        content: const SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Text(
+              'Con fundamento en la Ley Federal de Protección de Datos '
+              'Personales en Posesión de los Particulares...',
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoading() {
+    final size = MediaQuery.sizeOf(context);
+    final width = (size.width * 0.75).clamp(240.0, 420.0);
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: width,
+              height: size.height * 0.38,
+              child: RiveWidgetBuilder(
+                fileLoader: _riveLoader,
+                builder: (context, state) => switch (state) {
+                  RiveLoading() =>
+                    const Center(child: CircularProgressIndicator()),
+                  RiveFailed() =>
+                    const Center(child: CircularProgressIndicator()),
+                  RiveLoaded() => Transform.scale(
+                      scale: 1.6,
+                      child: RiveWidget(
+                        controller: state.controller,
+                        fit: Fit.contain,
                       ),
-                      const SizedBox(height: 10),
-                      GestureDetector(
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) {
-                              return AlertDialog(
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10.0),
-                                ),
-                                contentPadding:
-                                    const EdgeInsets.fromLTRB(24, 20, 24, 0),
-                                title: const Text(
-                                  'AVISO DE PRIVACIDAD INTEGRAL',
-                                  style: TextStyle(
-                                    color: Color.fromARGB(255, 243, 138, 0),
-                                    fontSize: 20,
-                                  ),
-                                ),
-                                content: const SizedBox(
-                                  width: double.maxFinite,
-                                  child: SingleChildScrollView(
-                                    child: Text(
-                                      'Con fundamento en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares...',
-                                      style: TextStyle(fontSize: 14),
-                                    ),
-                                  ),
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                    },
-                                    child: const Text('Aceptar'),
-                                  ),
-                                ],
-                              );
-                            },
-                          );
-                        },
-                        child: const Text(
-                          'Aviso de Privacidad',
-                          style: TextStyle(
-                            decoration: TextDecoration.underline,
-                            color: Color.fromARGB(255, 243, 138, 0),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                    ),
+                },
               ),
             ),
-          );
+            const SizedBox(height: 12),
+            const Text(
+              'Iniciando sesión...',
+              style: TextStyle(fontSize: 16, color: Colors.black54),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return _buildLoading();
+
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Image.asset(
+                    'assets/logo_ipl_negro.png',
+                    height: 150,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Bienvenido',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.dark,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Inicia sesión para continuar',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 15, color: Colors.black54),
+                  ),
+                  const SizedBox(height: 28),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _usernameController,
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            onSubmitted: (_) => _passwordFocus.requestFocus(),
+                            decoration: const InputDecoration(
+                              labelText: 'Usuario',
+                              prefixIcon: Icon(Icons.person_outline),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: _passwordController,
+                            focusNode: _passwordFocus,
+                            obscureText: !_showPassword,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _attemptLogin(),
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                tooltip: _showPassword
+                                    ? 'Ocultar contraseña'
+                                    : 'Mostrar contraseña',
+                                icon: Icon(
+                                  _showPassword
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                  color: Colors.grey,
+                                ),
+                                onPressed: () => setState(
+                                    () => _showPassword = !_showPassword),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 22),
+                          ElevatedButton.icon(
+                            onPressed: _canSubmit ? _attemptLogin : null,
+                            icon: const Icon(Icons.login),
+                            label: const Text('Iniciar sesión'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton(
+                    onPressed: _showPrivacy,
+                    child: const Text(
+                      'Aviso de Privacidad',
+                      style: TextStyle(decoration: TextDecoration.underline),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

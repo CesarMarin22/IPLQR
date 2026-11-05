@@ -1,25 +1,56 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:proyecto_qr/screens/detalle_llamadas_equipos.dart';
 import 'dart:io';
+
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/material.dart';
 import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/providers/serial_number.dart';
-import 'package:proyecto_qr/screens/menu_equipos.dart';
+import 'package:proyecto_qr/screens/detalle_llamadas_equipos.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
-Color especialColor = Color(0xFFA9DFBF);
-Color correctivoColor = Color(0xFFFAD02E);
-Color preventivoColor = Color(0xFFE8DAEF);
-Color azulPastel = Color(0xFFADD8E6);
-Color rojopastel = Color(0xFFFFB6C1);
+const Color especialColor = Color(0xFFA9DFBF);
+const Color correctivoColor = Color(0xFFFAD02E);
+const Color preventivoColor = Color(0xFFE8DAEF);
+const Color azulPastel = Color(0xFFADD8E6);
+const Color rojopastel = Color(0xFFFFB6C1);
+
+const _timeout = Duration(seconds: 25);
+
+/// Color por tipo de servicio (nombres tal como los devuelve SAP).
+Color _colorForServiceType(String tipoServicio) {
+  switch (tipoServicio.trim().toUpperCase()) {
+    case 'ESPECIAL':
+      return especialColor;
+    case 'CORRECTIVO':
+      return correctivoColor;
+    case 'PREVENTIVO':
+    case 'PREVENTIVO EQUIPO':
+      return preventivoColor;
+    case 'DAÑO':
+    case 'DAÑOS':
+      return azulPastel;
+    case 'DIAGNOSTICO':
+    case 'DIAGNÓSTICO':
+    case 'PREVENTIVO BATERIA':
+    case 'PREVENTIVO BATERÍA':
+      return rojopastel;
+    default:
+      return Colors.grey.shade400;
+  }
+}
+
+/// Fecha "2024-01-31T00:00:00Z" -> "2024-01-31".
+String _formatFecha(String fecha) {
+  final i = fecha.indexOf('T');
+  return i > 0 ? fecha.substring(0, i) : fecha;
+}
 
 class LlamadaServiciosEquipos extends StatefulWidget {
-  const LlamadaServiciosEquipos({Key? key});
+  const LlamadaServiciosEquipos({super.key});
 
   @override
   State<LlamadaServiciosEquipos> createState() =>
@@ -30,321 +61,70 @@ class _LlamadaServiciosEquiposState extends State<LlamadaServiciosEquipos> {
   bool isOption1Selected = true;
   Future<List<LlamadaServicio>>? futureCalls;
   String? selectedOT;
-  int touchedIndex = -1;
-  Map<String, int> serviceTypeCounts = {};
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
+
+  /// Error amigable de la última consulta (null si fue correcta).
+  String? _error;
+
+  IOClient? _client;
+  IOClient get _http => _client ??= IOClient(
+        HttpClient()
+          ..connectionTimeout = _timeout
+          ..badCertificateCallback =
+              (X509Certificate cert, String host, int port) => true,
+      );
 
   @override
   void initState() {
     super.initState();
-    fetchData();
-    // Selecciona la primera opción (información) por defecto
-  }
-
-  void showToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 1,
-      backgroundColor: Colors.black,
-      textColor: Colors.white,
-      fontSize: 16.0,
-    );
-  }
-
-  Future<List<LlamadaServicio>> fetchData() async {
-    final numSerie =
-        Provider.of<SerialNumberModel>(context, listen: false).serialNumber;
-    if (numSerie != "" && numSerie.isNotEmpty) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      sessionCookie = authProvider.sessionCookie;
-      routeIdCookie = authProvider.routeIdCookie;
-      authToken = authProvider.authToken;
-
-      print('authToken: $authToken');
-      print('sessionCookie: $sessionCookie');
-      print('routeIdCookie: $routeIdCookie');
-
-      return fetchDataFromAPI(numSerie);
-    }
-    return [];
+    // La consulta se hace UNA vez aquí (antes se lanzaba en cada build,
+    // incluso al cambiar entre tabla y gráfica).
+    futureCalls = fetchData();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-        toolbarHeight: 80,
-        title: Center(
-          child: Image.asset(
-            'assets/logo ipl_BLANCO.png',
-            width: 70,
-            height: 70,
-          ),
-        ),
-      ),
-      body: Column(
-        children: [
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 30),
-              child: Column(
-                children: [
-                  const Text(
-                    'HISTORIAL DE SERVICIOS',
-                    style: TextStyle(fontSize: 30),
-                  ),
-                  const SizedBox(
-                    height: 40,
-                  ),
-                  ToggleButtons(
-                    selectedColor: Colors.white,
-                    fillColor: Color.fromARGB(255, 243, 138, 0),
-                    borderWidth: 3,
-                    selectedBorderColor: Color.fromARGB(255, 243, 138, 0),
-                    borderRadius: BorderRadius.circular(50),
-                    isSelected: [isOption1Selected, !isOption1Selected],
-                    onPressed: (index) {
-                      setState(() {
-                        isOption1Selected = index == 0;
-                      });
-                    },
-                    children: [
-                      FaIcon(FontAwesomeIcons.table),
-                      Icon(Icons.pie_chart),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SizedBox(height: 60),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.vertical,
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: FutureBuilder<List<LlamadaServicio>>(
-                  future: fetchData(),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      return Center(child: Text('Error: ${snapshot.error}'));
-                    } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return Center(
-                          child:
-                              Text('No se encontraron llamadas de servicio.'));
-                    } else if (isOption1Selected) {
-                      return DataTable(
-                        columns: <DataColumn>[
-                          DataColumn(label: Text('O.T.')),
-                          DataColumn(label: Text('FALLA')),
-                          DataColumn(label: Text('FECHA')),
-                          DataColumn(label: Text('TIPO DE SERVICIO')),
-                        ],
-                        rows: snapshot.data!
-                            .map((llamada) => DataRow(
-                                  cells: [
-                                    DataCell(
-                                      Text(llamada.serviceCallID.toString()),
-                                      onTap: () {
-                                        setState(() {
-                                          selectedOT =
-                                              llamada.serviceCallID.toString();
-                                        });
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) =>
-                                                DetallesLlamadaServicioEquipos(
-                                              ot: llamada.serviceCallID
-                                                  .toString(),
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                    DataCell(Text(llamada.subject)),
-                                    DataCell(Text(llamada.creationDate)),
-                                    DataCell(Text(llamada.serviceCallTypeName)),
-                                  ],
-                                ))
-                            .toList(),
-                      );
-                    } else {
-                      return PieChartSample2(
-                        touchedIndex: touchedIndex,
-                        llamadas: snapshot.data!,
-                      );
-                    }
-                  },
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 18.0),
-          SizedBox(
-            width: 200,
-            height: 90,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (context) => const menuEquipos()));
-              },
-              style: ElevatedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      side: const BorderSide(color: Colors.black, width: 5))),
-              child: const Text(
-                'REGRESAR',
-                style: TextStyle(fontSize: 20, color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-        ],
-      ),
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w300,
-                      fontSize: 12.0,
-                      color: Color.fromARGB(255, 255, 255, 255)),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w300,
-                      fontSize: 12.0,
-                      color: Color.fromARGB(255, 255, 255, 255)),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  void dispose() {
+    _client?.close();
+    super.dispose();
   }
 
-  Widget _buildIndicators(List<LlamadaServicio> llamadas) {
-    final Map<String, int> serviceTypeCounts = {};
-
-    for (final llamada in llamadas) {
-      final tipoServicio = llamada.serviceCallTypeName;
-      serviceTypeCounts[tipoServicio] =
-          (serviceTypeCounts[tipoServicio] ?? 0) + 1;
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: serviceTypeCounts.entries.map((entry) {
-        return _buildIndicator(getColorForServiceType(entry.key), entry.key);
-      }).toList(),
-    );
-  }
-
-  Widget _buildIndicator(Color color, String text) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            shape: BoxShape.rectangle,
-            color: color,
-          ),
-        ),
-        SizedBox(width: 8),
-        Text(text),
-      ],
-    );
-  }
-
-  List<PieChartSectionData> _generatePieChartSections(
-    List<LlamadaServicio> llamadas,
-  ) {
-    final Map<String, int> serviceTypeCounts = {};
-
-    for (final llamada in llamadas) {
-      final tipoServicio = llamada.serviceCallTypeName;
-      serviceTypeCounts[tipoServicio] =
-          (serviceTypeCounts[tipoServicio] ?? 0) + 1;
-    }
-
-    final List<PieChartSectionData> sections = [];
-
-    serviceTypeCounts.entries.forEach((entry) {
-      final String tipoServicio = entry.key;
-      final int cantidad = entry.value;
-      final double porcentaje = (cantidad / llamadas.length) * 100;
-
-      final String label =
-          '(${cantidad.toString()})\n${porcentaje.toStringAsFixed(2)}%';
-
-      final PieChartSectionData section = PieChartSectionData(
-        color: getColorForServiceType(tipoServicio),
-        value: cantidad.toDouble(),
-        title: label,
-        radius: 150,
-        titleStyle: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-      );
-
-      sections.add(section);
+  void _reload() {
+    setState(() {
+      futureCalls = fetchData();
     });
-
-    return sections;
   }
 
-  Color getColorForServiceType(String tipoServicio) {
-    Map<String, Color> colorMap = {
-      'ESPECIAL': especialColor,
-      'CORRECTIVO': correctivoColor,
-      'PREVENTIVO': preventivoColor,
-      'DAÑO': azulPastel,
-      'DIAGNOSTICO': rojopastel,
-    };
+  /// true durante el "deslizar para actualizar" (el propio RefreshIndicator
+  /// muestra el progreso, así que no se reemplaza la lista por un spinner).
+  bool _refreshing = false;
 
-    return colorMap[tipoServicio] ?? Colors.grey;
+  Future<void> _refresh() async {
+    final future = fetchData();
+    setState(() {
+      _refreshing = true;
+      futureCalls = future;
+    });
+    try {
+      await future;
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  Future<List<LlamadaServicio>> fetchData() async {
+    final numSerie = context.read<SerialNumberModel>().serialNumber;
+    if (numSerie.isNotEmpty) {
+      return fetchDataFromAPI(numSerie);
+    }
+    _error = null;
+    return [];
   }
 
   Future<List<LlamadaServicio>> fetchDataFromAPI(String numSerie) async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
-
-    final ioClient = IOClient(client);
+    final auth = context.read<AuthProvider>();
+    final authToken = auth.authToken;
+    final sessionCookie = auth.sessionCookie;
+    final routeIdCookie = auth.routeIdCookie;
+    _error = null;
 
     final apiUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes)?'
@@ -355,102 +135,278 @@ class _LlamadaServiciosEquiposState extends State<LlamadaServiciosEquipos> {
     );
 
     try {
-      final response = await ioClient.get(
+      final response = await _http.get(
         apiUrl,
         headers: {
-          'Authorization':
-              'Bearer $authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
+      if (!mounted) return [];
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> decodedResponse = json.decode(response.body);
-
-        final List<LlamadaServicio> llamadas =
-            (decodedResponse['value'] as List<dynamic>)
-                .map((dynamic json) => LlamadaServicio.fromJson(json))
-                .toList();
-        print('Datos recibidos: $llamadas');
-        print('Número de llamadas recibidas: ${llamadas.length}');
-
-        return llamadas;
+        final decoded = json.decode(response.body);
+        final values = decoded is Map ? decoded['value'] : null;
+        if (values is! List) return [];
+        return values
+            .whereType<Map<String, dynamic>>()
+            .map(LlamadaServicio.fromJson)
+            .toList();
       } else if (response.statusCode == 401) {
-        final decodedResponse = json.decode(response.body);
-        final error = decodedResponse['error'];
-        if (error['code'] == 301) {
-          // Mostrar el FlutterToast indicando que la sesión ha expirado
-          showToast(
-              'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-          // Redirigir al inicio de sesión
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: (context) =>
-                    LoginScreen()), // Reemplaza 'LoginPage' con la clase de tu pantalla de inicio de sesión
-          ); // Ajusta la ruta según tu aplicación
-        } else {
-          // Mostrar el AlertDialog con el mensaje de error
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Error en la solicitud'),
-                content: Text(
-                    'Código de error: ${error['code']}\nMensaje: ${error['message']['value']}'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
+        final err = _parseError(response.body);
+        if (err.$1 == 301) {
+          _sessionExpired();
+          return [];
         }
+        _error = 'Error en la solicitud (código ${err.$1 ?? 401}).'
+            '${err.$2 != null ? '\n${err.$2}' : ''}';
       } else {
-        // Mostrar el AlertDialog con el mensaje de error
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Error en la solicitud'),
-              content: Text('Código de error: ${response.statusCode}'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+        _error = 'Error en la solicitud (código ${response.statusCode}).';
       }
+    } on TimeoutException {
+      _error = 'El servidor tardó demasiado en responder.\n'
+          'Revisa tu conexión e inténtalo de nuevo.';
     } catch (e) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text('Ocurrió un error inesperado: $e'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      debugPrint('Error llamadas_servicio_equipos: $e');
+      _error = 'No se pudo conectar con el servidor.\n'
+          'Revisa tu conexión e inténtalo de nuevo.';
     }
     return [];
+  }
+
+  /// Devuelve (código, mensaje) del error de SAP sin lanzar excepciones.
+  (int?, String?) _parseError(String body) {
+    try {
+      final decoded = json.decode(body);
+      final error = decoded is Map ? decoded['error'] : null;
+      if (error is! Map) return (null, null);
+      final code = error['code'];
+      final message = error['message'];
+      return (
+        code is int ? code : int.tryParse('$code'),
+        message is Map ? message['value']?.toString() : message?.toString(),
+      );
+    } catch (_) {
+      return (null, null);
+    }
+  }
+
+  void _sessionExpired() {
+    final auth = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    unawaited(auth.logout());
+    messenger.showSnackBar(
+      const SnackBar(
+        content:
+            Text('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+  }
+
+  void _openDetalle(LlamadaServicio llamada) {
+    selectedOT = llamada.serviceCallID.toString();
+    context.read<AuthProvider>().resetSession();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DetallesLlamadaServicioEquipos(ot: selectedOT!),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Historial de servicios')),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                      value: true,
+                      icon: Icon(Icons.view_list_outlined),
+                      label: Text('Lista'),
+                    ),
+                    ButtonSegment(
+                      value: false,
+                      icon: Icon(Icons.pie_chart_outline),
+                      label: Text('Gráfica'),
+                    ),
+                  ],
+                  selected: {isOption1Selected},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) =>
+                      setState(() => isOption1Selected = s.first),
+                ),
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<List<LlamadaServicio>>(
+                future: futureCalls,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting &&
+                      !_refreshing) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final llamadas = snapshot.data ?? const <LlamadaServicio>[];
+                  return RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: _buildContent(llamadas),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: const AppFooter(),
+    );
+  }
+
+  Widget _buildContent(List<LlamadaServicio> llamadas) {
+    if (_error != null || llamadas.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 40),
+          EmptyState(
+            message: _error ?? 'No se encontraron llamadas de servicio.',
+            icon: _error != null
+                ? Icons.cloud_off_outlined
+                : Icons.inbox_outlined,
+            onRetry: _reload,
+          ),
+        ],
+      );
+    }
+
+    if (!isOption1Selected) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: PieChartSample2(touchedIndex: -1, llamadas: llamadas),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      itemCount: llamadas.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4, left: 4),
+            child: Text(
+              '${llamadas.length} '
+              '${llamadas.length == 1 ? 'orden de trabajo' : 'órdenes de trabajo'}',
+              style: const TextStyle(fontSize: 13, color: Colors.black54),
+            ),
+          );
+        }
+        return _LlamadaCard(
+          llamada: llamadas[index - 1],
+          onTap: _openDetalle,
+        );
+      },
+    );
+  }
+}
+
+class _LlamadaCard extends StatelessWidget {
+  const _LlamadaCard({required this.llamada, required this.onTap});
+
+  final LlamadaServicio llamada;
+  final ValueChanged<LlamadaServicio> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final tipo = llamada.serviceCallTypeName;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => onTap(llamada),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'OT ${llamada.serviceCallID}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.dark,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _formatFecha(llamada.creationDate),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.black54,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      llamada.subject.isEmpty
+                          ? 'Sin descripción'
+                          : llamada.subject,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(fontSize: 14, color: AppColors.dark),
+                    ),
+                    if (tipo.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _colorForServiceType(tipo),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          tipo,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.dark,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.black38),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -470,12 +426,15 @@ class LlamadaServicio {
   factory LlamadaServicio.fromJson(Map<String, dynamic> json) {
     final serviceCalls = json['ServiceCalls'];
     final serviceCallTypes = json['ServiceCallTypes'];
+    final sc = serviceCalls is Map ? serviceCalls : const {};
+    final sct = serviceCallTypes is Map ? serviceCallTypes : const {};
+    final id = sc['ServiceCallID'];
 
     return LlamadaServicio(
-      serviceCallID: serviceCalls['ServiceCallID'] ?? 0,
-      subject: serviceCalls['Subject'] ?? '',
-      creationDate: serviceCalls['CreationDate'] ?? '',
-      serviceCallTypeName: serviceCallTypes['Name'] ?? '',
+      serviceCallID: id is num ? id.toInt() : int.tryParse('$id') ?? 0,
+      subject: sc['Subject']?.toString() ?? '',
+      creationDate: sc['CreationDate']?.toString() ?? '',
+      serviceCallTypeName: sct['Name']?.toString() ?? '',
     );
   }
 }
@@ -485,170 +444,121 @@ class PieChartSample2 extends StatelessWidget {
   final List<LlamadaServicio> llamadas;
 
   const PieChartSample2({
+    super.key,
     required this.touchedIndex,
     required this.llamadas,
   });
 
+  Map<String, int> _counts() {
+    final Map<String, int> serviceTypeCounts = {};
+    for (final llamada in llamadas) {
+      final tipo = llamada.serviceCallTypeName.isEmpty
+          ? 'Sin tipo'
+          : llamada.serviceCallTypeName;
+      serviceTypeCounts[tipo] = (serviceTypeCounts[tipo] ?? 0) + 1;
+    }
+    return serviceTypeCounts;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 300,
-          height: 300,
-          child: Center(
-            child: PieChart(
-              PieChartData(
-                centerSpaceRadius: 0,
-                sectionsSpace: 4,
-                borderData: FlBorderData(show: false),
-                sections: [
-                  ...showingSections(llamadas),
-                  ..._generatePieChartSections(llamadas)
-                ],
+    final counts = _counts();
+    final total = llamadas.length;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final size = constraints.maxWidth.clamp(160.0, 280.0);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: size,
+              child: PieChart(
+                PieChartData(
+                  centerSpaceRadius: size * 0.18,
+                  sectionsSpace: 2,
+                  borderData: FlBorderData(show: false),
+                  sections: _generatePieChartSections(counts, total, size),
+                ),
               ),
             ),
-          ),
-        ),
-        SizedBox(
-          height: 30,
-        ),
-        _buildIndicators(llamadas),
-      ],
+            const SizedBox(height: 20),
+            for (final entry in counts.entries)
+              _buildIndicator(
+                getColorForServiceType(entry.key),
+                entry.key,
+                entry.value,
+                total,
+              ),
+          ],
+        );
+      },
     );
   }
 
-  List<PieChartSectionData> showingSections(List<LlamadaServicio> llamadas) {
-    final List<PieChartSectionData> sections = [];
-    final Map<String, int> serviceTypeCounts = {};
+  /// Se conserva por compatibilidad; las secciones ahora se basan en el
+  /// conteo por tipo (antes se agregaban secciones duplicadas con 0 %).
+  List<PieChartSectionData> showingSections(List<LlamadaServicio> llamadas) =>
+      _generatePieChartSections(_counts(), llamadas.length, 280);
 
-    // Calcular porcentajes fuera del bucle
-    final Map<String, double> porcentajes = {};
-
-    serviceTypeCounts.entries.forEach((entry) {
-      final String tipoServicio = entry.key;
-      final int cantidad = entry.value;
-      final double porcentaje = (cantidad / llamadas.length) * 100;
-      porcentajes[tipoServicio] = porcentaje;
-    });
-
-    // Usar porcentajes dentro del bucle para crear las secciones
-    llamadas.forEach((llamada) {
-      final isTouched = llamadas.indexOf(llamada) == touchedIndex;
-      final fontSize = isTouched ? 25.0 : 16.0;
-      final radius = isTouched ? 60.0 : 50.0;
-      const shadows = [Shadow(color: Colors.black, blurRadius: 2)];
-
-      final double porcentaje = porcentajes[llamada.serviceCallTypeName] ?? 0.0;
-
-      sections.add(
-        PieChartSectionData(
-          color: getColorForServiceType(llamada.serviceCallTypeName),
-          value: porcentaje, // Utiliza el porcentaje calculado previamente
-          title:
-              '${llamada.serviceCallTypeName}\n${porcentaje.toStringAsFixed(2)}%',
-          radius: radius,
-          titleStyle: TextStyle(
-            fontSize: fontSize,
-            fontWeight: FontWeight.bold,
-            color:
-                Colors.white, // Cambia a blanco para que el texto sea visible
-            shadows: shadows,
+  Widget _buildIndicator(Color color, String text, int cantidad, int total) {
+    final porcentaje = total == 0 ? 0 : cantidad / total * 100;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 16,
+            height: 16,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(4),
+            ),
           ),
-        ),
-      );
-    });
-
-    return sections;
-  }
-
-  Widget _buildIndicators(List<LlamadaServicio> llamadas) {
-    final Map<String, int> serviceTypeCounts = {};
-
-    for (final llamada in llamadas) {
-      final tipoServicio = llamada.serviceCallTypeName;
-      serviceTypeCounts[tipoServicio] =
-          (serviceTypeCounts[tipoServicio] ?? 0) + 1;
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: serviceTypeCounts.entries.map((entry) {
-        return _buildIndicator(getColorForServiceType(entry.key), entry.key);
-      }).toList(),
-    );
-  }
-
-  Widget _buildIndicator(Color color, String text) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        Container(
-          width: 16,
-          height: 16,
-          decoration: BoxDecoration(
-            shape: BoxShape.rectangle,
-            color: color,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14, color: AppColors.dark),
+            ),
           ),
-        ),
-        SizedBox(width: 8),
-        Text(text),
-      ],
+          Text(
+            '$cantidad · ${porcentaje.toStringAsFixed(1)} %',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black54,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   List<PieChartSectionData> _generatePieChartSections(
-    List<LlamadaServicio> llamadas,
+    Map<String, int> counts,
+    int total,
+    double size,
   ) {
-    final Map<String, int> serviceTypeCounts = {};
-
-    for (final llamada in llamadas) {
-      final tipoServicio = llamada.serviceCallTypeName;
-      serviceTypeCounts[tipoServicio] =
-          (serviceTypeCounts[tipoServicio] ?? 0) + 1;
-    }
-
-    final List<PieChartSectionData> sections = [];
-
-    serviceTypeCounts.entries.forEach((entry) {
-      final String tipoServicio = entry.key;
-      final int cantidad = entry.value;
-      final double porcentaje = (cantidad / llamadas.length) * 100;
-
-      final String label =
-          '(${cantidad.toString()})\n${porcentaje.toStringAsFixed(2)}%';
-
-      final PieChartSectionData section = PieChartSectionData(
-        color: getColorForServiceType(tipoServicio),
-        value: cantidad.toDouble(),
-        title: label,
-        radius: 150,
-        titleStyle: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
+    final radius = size / 2 - size * 0.18 - 4;
+    return [
+      for (final entry in counts.entries)
+        PieChartSectionData(
+          color: getColorForServiceType(entry.key),
+          value: entry.value.toDouble(),
+          title: total == 0
+              ? ''
+              : '${(entry.value / total * 100).toStringAsFixed(0)}%',
+          radius: radius,
+          titleStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: AppColors.dark,
+          ),
         ),
-      );
-
-      sections.add(section);
-    });
-
-    print('Secciones de la gráfica de pastel: ${sections.length}');
-
-    return sections;
+    ];
   }
 
-  Color getColorForServiceType(String tipoServicio) {
-    Map<String, Color> colorMap = {
-      'Especial': especialColor,
-      'Correctivo': correctivoColor,
-      'Preventivo Equipo': preventivoColor,
-      'Daños': azulPastel,
-      'Preventivo Bateria': rojopastel,
-    };
-
-    return colorMap[tipoServicio] ?? Colors.grey;
-  }
+  Color getColorForServiceType(String tipoServicio) =>
+      _colorForServiceType(tipoServicio);
 }

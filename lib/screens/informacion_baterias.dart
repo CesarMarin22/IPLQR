@@ -1,375 +1,178 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:proyecto_qr/providers/serial_number.dart';
-import 'package:proyecto_qr/screens/menu_baterias.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InformacionBaterias extends StatefulWidget {
   const InformacionBaterias({super.key});
 
   @override
-  _InformacionBateriasState createState() => _InformacionBateriasState();
+  State<InformacionBaterias> createState() => _InformacionBateriasState();
 }
 
 class _InformacionBateriasState extends State<InformacionBaterias> {
-  final TextEditingController _marcaController = TextEditingController();
-  final TextEditingController _modeloController = TextEditingController();
-  final TextEditingController _serieController = TextEditingController();
-  final TextEditingController _voltajeController = TextEditingController();
-  final TextEditingController _capacidadController = TextEditingController();
-  final TextEditingController _tipoController = TextEditingController();
-  final TextEditingController _comentariosController = TextEditingController();
+  static const _sinInfo = 'No Contiene Información';
+  static const _timeout = Duration(seconds: 25);
+
+  late final IOClient _ioClient = IOClient(
+    HttpClient()
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true,
+  );
+
   String authToken = ''; // Token de autenticación
   String sessionCookie = '';
   String routeIdCookie = '';
 
+  bool _loading = true;
+  String? _error;
+  Map<String, String>? _info;
+  String _numSerie = '';
+
   @override
   void initState() {
     super.initState();
-    fetchData();
-  }
-
-  void showToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 1,
-      backgroundColor: Colors.black,
-      textColor: Colors.white,
-      fontSize: 16.0,
-    );
-  }
-
-  Future<void> fetchData() async {
-    final numSerie =
-        Provider.of<SerialNumberModel>(context, listen: false).serialNumber;
-    if (numSerie != "" && numSerie.isNotEmpty) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      sessionCookie = authProvider.sessionCookie;
-      routeIdCookie = authProvider.routeIdCookie;
-      authToken = authProvider.authToken;
-
-      await fetchDataFromAPI(numSerie);
+    _numSerie = context.read<SerialNumberModel>().serialNumber;
+    if (_numSerie.isEmpty) {
+      _loading = false;
+      _error = 'No hay un número de serie seleccionado.';
+    } else {
+      _readAuth();
+      fetchDataFromAPI(_numSerie);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+  void dispose() {
+    _ioClient.close();
+    super.dispose();
+  }
+
+  void _readAuth() {
+    final authProvider = context.read<AuthProvider>();
     sessionCookie = authProvider.sessionCookie;
     routeIdCookie = authProvider.routeIdCookie;
     authToken = authProvider.authToken;
-    authToken = authProvider.authToken;
-    return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
-        ),
-        body: SingleChildScrollView(
-          // Agregamos SingleChildScrollView aquí
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 30),
-              child: Column(
-                children: [
-                  const Text(
-                    'INFORMACIÓN DE BATERIA',
-                    style: TextStyle(fontSize: 30),
-                  ),
-                  const SizedBox(
-                    height: 70,
-                  ),
-                  TextField(
-                    controller: _marcaController,
-                    decoration: InputDecoration(
-                      labelText: 'Marca',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _modeloController,
-                    decoration: InputDecoration(
-                      labelText: 'Modelo',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _serieController,
-                    decoration: InputDecoration(
-                      labelText: 'Serie',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _voltajeController,
-                    decoration: InputDecoration(
-                      labelText: 'Voltaje',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _capacidadController,
-                    decoration: InputDecoration(
-                      labelText: 'Capacidad',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _tipoController,
-                    decoration: InputDecoration(
-                      labelText: 'Tipo',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _comentariosController,
-                    maxLines: null,
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: 'Comentarios',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: const Text('Comentarios'),
-                            content: SingleChildScrollView(
-                              child: Text(_comentariosController.text),
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                },
-                                child: const Text('Cerrar'),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 18.0),
-                  SizedBox(
-                    width: 200,
-                    height: 90,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const menuBaterias()));
-                      },
-                      style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: const BorderSide(
-                                  color: Colors.black, width: 5))),
-                      child: const Text(
-                        'REGRESAR',
-                        style: TextStyle(fontSize: 20, color: Colors.white),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  // Espaciado entre TextField
-                ],
-              ),
-            ),
-          ),
-        ),
-        bottomNavigationBar: const BottomAppBar(
-          color: Color.fromARGB(255, 29, 29, 27),
-          shape: CircularNotchedRectangle(),
-          child: SizedBox(
-            height: 50,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Copyright ©2023, Todos los Derechos Reservados.',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                  Text(
-                    'Powered by IPL',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ));
+  }
+
+  /// Recarga los datos (botón Reintentar / deslizar hacia abajo).
+  Future<void> fetchData({bool showLoader = true}) async {
+    if (_numSerie.isEmpty) return;
+    _readAuth();
+    if (showLoader) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    await fetchDataFromAPI(_numSerie);
+  }
+
+  String _text(dynamic value) {
+    if (value == null) return _sinInfo;
+    final s = value.toString();
+    return s.isEmpty ? _sinInfo : s;
+  }
+
+  void _goToLogin() {
+    if (!mounted) return;
+    appMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content:
+            Text('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (r) => false,
+    );
   }
 
   Future<void> fetchDataFromAPI(String numSerie) async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
-
-    final ioClient = IOClient(client);
-
     final apiUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/Items?'
       '\$select=U_MarcaB,U_ModeloBat,ForeignName,U_VoltajeB,U_CapacidadB,U_TipoB,User_Text&'
       '\$filter=(ItemsGroupCode eq 430 or AssetGroup eq \'BAT\') and ForeignName eq \'$numSerie\'',
     );
 
+    String? error;
+    Map<String, String>? info;
+
     try {
-      final response = await ioClient.get(
+      final response = await _ioClient.get(
         apiUrl,
         headers: {
-          'Authorization':
-              'Bearer $authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
+
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final decodedResponse = json.decode(response.body);
-        for (var item in decodedResponse['value']) {
-          if (item != null) {
-            _serieController.text =
-                item['ForeignName'] ?? 'No Contiene Información';
-            _modeloController.text =
-                item['U_ModeloBat'] ?? 'No Contiene Información';
-            _voltajeController.text =
-                item['U_VoltajeB'] ?? 'No Contiene Información';
-            _capacidadController.text =
-                item['U_CapacidadB'] ?? 'No Contiene Información';
-            _tipoController.text = item['U_TipoB'] ?? 'No Contiene Información';
-            _comentariosController.text = formatComentarios(
-                item['User_Text'] ?? 'No Contiene Información');
-            _marcaController.text =
-                item['U_MarcaB'] ?? 'No Contiene Información';
+        final decoded = json.decode(response.body);
+        final values = decoded is Map ? decoded['value'] : null;
+        if (values is List) {
+          // Igual que antes: si hay varios registros, se queda el último.
+          for (final item in values) {
+            if (item is Map) {
+              info = {
+                'serie': _text(item['ForeignName']),
+                'modelo': _text(item['U_ModeloBat']),
+                'voltaje': _text(item['U_VoltajeB']),
+                'capacidad': _text(item['U_CapacidadB']),
+                'tipo': _text(item['U_TipoB']),
+                'comentarios': formatComentarios(_text(item['User_Text'])),
+                'marca': _text(item['U_MarcaB']),
+              };
+            }
           }
         }
-      } else if (response.statusCode == 401) {
-        final decodedResponse = json.decode(response.body);
-        final error = decodedResponse['error'];
-        if (error['code'] == 301) {
-          // Mostrar el FlutterToast indicando que la sesión ha expirado
-          showToast(
-              'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-          // Redirigir al inicio de sesión
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: (context) =>
-                    LoginScreen()), // Reemplaza 'LoginPage' con la clase de tu pantalla de inicio de sesión
-          );
-        } else {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Error en la solicitud'),
-                content: Text(
-                    'Código de error: ${error['code']}\nMensaje: ${error['message']['value']}'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
+        if (info == null) {
+          error = 'No se encontró información para la serie $numSerie.';
         }
+      } else if (response.statusCode == 401) {
+        dynamic err;
+        try {
+          final decoded = json.decode(response.body);
+          err = decoded is Map ? decoded['error'] : null;
+        } catch (_) {}
+        if (err is Map && err['code'] == 301) {
+          _goToLogin();
+          return;
+        }
+        final msg = err is Map && err['message'] is Map
+            ? err['message']['value']
+            : null;
+        error = 'Error en la solicitud.\n'
+            'Código de error: ${err is Map ? err['code'] : 401}'
+            '${msg != null ? '\nMensaje: $msg' : ''}';
       } else {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Error en la solicitud'),
-              content: Text('Código de error: ${response.statusCode}'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+        error =
+            'Error en la solicitud.\nCódigo de error: ${response.statusCode}';
       }
+    } on TimeoutException {
+      error = 'El servidor tardó demasiado en responder. Intenta de nuevo.';
+    } on SocketException {
+      error = 'No se pudo conectar con el servidor. Revisa tu conexión.';
     } catch (e) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text('Ocurrió un error inesperado: $e'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      error = 'Ocurrió un error inesperado: $e';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _error = error;
+      _info = info;
+    });
   }
 
   String formatComentarios(String userText) {
@@ -378,7 +181,7 @@ class _InformacionBateriasState extends State<InformacionBaterias> {
 
     for (String line in lines) {
       if (line.trim().isNotEmpty) {
-        // Dividir cada línea en columnas usando espacios
+        // Dividir cada línea en columnas usando tabuladores
         List<String> columns = line.split('\t');
 
         // Agregar sangría a las líneas opcionales
@@ -394,5 +197,116 @@ class _InformacionBateriasState extends State<InformacionBaterias> {
 
     // Unir todas las líneas formateadas con saltos de línea
     return formattedLines.join('\n');
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    final info = _info;
+    if (_error != null || info == null) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 40),
+          EmptyState(
+            message: _error ?? 'Sin información.',
+            icon: Icons.error_outline,
+            onRetry: _numSerie.isEmpty ? null : fetchData,
+          ),
+        ],
+      );
+    }
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      children: [
+        const Text(
+          'Información de batería',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: AppColors.dark,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Serie: $_numSerie',
+          style: const TextStyle(fontSize: 14, color: Colors.black54),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Column(
+              children: [
+                InfoRow(label: 'Marca', value: info['marca']!),
+                InfoRow(label: 'Modelo', value: info['modelo']!),
+                InfoRow(label: 'Serie', value: info['serie']!),
+                InfoRow(label: 'Voltaje', value: info['voltaje']!),
+                InfoRow(label: 'Capacidad', value: info['capacidad']!),
+                InfoRow(label: 'Tipo', value: info['tipo']!),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.notes, size: 20, color: AppColors.orangeDark),
+                    SizedBox(width: 8),
+                    Text(
+                      'Comentarios',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.dark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  info['comentarios']!.isEmpty
+                      ? _sinInfo
+                      : info['comentarios']!,
+                  style: const TextStyle(fontSize: 14, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        OutlinedButton.icon(
+          onPressed: () => Navigator.of(context).maybePop(),
+          icon: const Icon(Icons.arrow_back),
+          label: const Text('Regresar'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 76,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: () => fetchData(showLoader: false),
+          child: _buildBody(),
+        ),
+      ),
+      bottomNavigationBar: const AppFooter(),
+    );
   }
 }

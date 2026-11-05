@@ -1,196 +1,75 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/escoger.dart';
 import 'package:proyecto_qr/screens/informacion_baterias.dart';
 import 'package:proyecto_qr/screens/llamadas_servicio_baterias.dart';
-import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
-class menuBaterias extends StatefulWidget {
+class menuBaterias extends StatelessWidget {
   const menuBaterias({super.key});
 
-  @override
-  State<menuBaterias> createState() => _menuBateriasState();
-}
-
-class _menuBateriasState extends State<menuBaterias> {
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
+  void _open(BuildContext context, Widget page) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
+    // SerialNumberModel no notifica cambios; basta con leerlo una vez.
+    final numSerie = context.read<SerialNumberModel>().serialNumber;
+
     return Scaffold(
       appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-        toolbarHeight: 80,
-        title: Center(
-          child: Image.asset(
-            'assets/logo ipl_BLANCO.png',
-            width: 70,
-            height: 70,
-          ),
-        ),
+        toolbarHeight: 76,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
       ),
-      //////////// cuerpo de la aplicacion/////////////////////////
-      body: SingleChildScrollView(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 30),
-            child: Column(
-              children: [
-                const Text(
-                  'BATERIAS',
-                  style: TextStyle(fontSize: 40),
-                ),
-                const SizedBox(
-                  height: 100,
-                ),
-                ////////////////////////////boton informacion////////////////////////////////////////////////////
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const InformacionBaterias(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'INFORMACIÓN',
-                      style: TextStyle(fontSize: 20, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                /////////////////Termino de boton informacion////////////////////////////////////////////
-                ///
-                ////////////////espaciado entre botones///////////////////////////////////////////////////
-                const SizedBox(
-                  height: 65,
-                ),
-                ////////////////////termino Espaciado entre botones////////////////////////////////////
-                ///
-                //////////////////boton historia de servicios//////////////////////////////////////////////
-                SizedBox(
-                  width: 200,
-                  height: 60,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              const LlamadaServiciosBaterias(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'HISTORIAL DE SERVICIOS',
-                      style: TextStyle(fontSize: 15, color: Colors.black),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                ///////////////////////fin boton historial de servicios/////////////////////////////
-                ////////////////////////////Termino boton Reporte de instalacion/////////////////////////
-                ////////////////espaciado entre botones///////////////////////////////////////////////////
-                const SizedBox(
-                  height: 80,
-                ),
-                ////////////////////termino Espaciado entre botones////////////////////////////////////
-                ///
-                /////////////////////boton REGRESAR //////////////////////////////////////////////
-                SizedBox(
-                  width: 200,
-                  height: 90,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const eleccion(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        side: const BorderSide(color: Colors.black, width: 5),
-                      ),
-                    ),
-                    child: const Text(
-                      'ESCANEAR',
-                      style: TextStyle(fontSize: 15, color: Colors.white),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                ///////////////////////fin boton historial de servicios/////////////////////////////
-              ],
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+          children: [
+            const Text(
+              'Baterías',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: AppColors.dark,
+              ),
             ),
-          ),
-        ),
-      ),
-      //////////////////configuracion Fotter/////////////////////////////////////////////////////
-      bottomNavigationBar: const BottomAppBar(
-        color: Color.fromARGB(255, 29, 29, 27),
-        shape: CircularNotchedRectangle(),
-        child: SizedBox(
-          height: 50,
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Copyright ©2023, Todos los Derechos Reservados.',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-                Text(
-                  'Powered by IPL',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w300,
-                    fontSize: 12.0,
-                    color: Color.fromARGB(255, 255, 255, 255),
-                  ),
-                ),
-              ],
+            if (numSerie.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Serie: $numSerie',
+                style: const TextStyle(fontSize: 14, color: Colors.black54),
+              ),
+            ],
+            const SizedBox(height: 20),
+            MenuTile(
+              icon: Icons.battery_charging_full,
+              title: 'Información',
+              subtitle: 'Datos de la batería',
+              onTap: () => _open(context, const InformacionBaterias()),
             ),
-          ),
+            MenuTile(
+              icon: Icons.history,
+              title: 'Historial de servicios',
+              subtitle: 'Llamadas de servicio de la batería',
+              onTap: () => _open(context, const LlamadaServiciosBaterias()),
+            ),
+            const SizedBox(height: 28),
+            OutlinedButton.icon(
+              // Vuelve al menú principal limpiando la pila (antes se apilaba
+              // una nueva pantalla de elección cada vez).
+              onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const eleccion()),
+                (r) => false,
+              ),
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear otro artículo'),
+            ),
+          ],
         ),
       ),
+      bottomNavigationBar: const AppFooter(),
     );
   }
 }

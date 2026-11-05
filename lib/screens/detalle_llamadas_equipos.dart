@@ -1,62 +1,69 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:proyecto_qr/screens/llamadas_servicio_equipos.dart';
-import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:provider/provider.dart';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
+import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
+
+const _timeout = Duration(seconds: 25);
 
 class DetallesLlamadaServicioEquipos extends StatefulWidget {
   final String ot;
 
-  DetallesLlamadaServicioEquipos({required this.ot});
+  const DetallesLlamadaServicioEquipos({super.key, required this.ot});
 
   @override
-  _DetallesLlamadaServicioEquiposState createState() =>
+  State<DetallesLlamadaServicioEquipos> createState() =>
       _DetallesLlamadaServicioEquiposState();
 }
 
 class _DetallesLlamadaServicioEquiposState
     extends State<DetallesLlamadaServicioEquipos> {
+  /// Detalles de la OT tal como los devuelve SAP.
   Map<String, dynamic>? detallesOT;
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = ''; // Almacena los detalles de la OT
+  bool _loading = true;
+  bool _sinDetalles = false;
+  String? _error;
+
+  IOClient? _client;
+  IOClient get _http => _client ??= IOClient(
+        HttpClient()
+          ..connectionTimeout = _timeout
+          ..badCertificateCallback =
+              (X509Certificate cert, String host, int port) => true,
+      );
 
   @override
   void initState() {
     super.initState();
-    // Realizar una consulta a la API para obtener los detalles de la OT
     _fetchOTDetails(widget.ot);
   }
 
-  void showToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 1,
-      backgroundColor: Colors.black,
-      textColor: Colors.white,
-      fontSize: 16.0,
-    );
+  @override
+  void dispose() {
+    _client?.close();
+    super.dispose();
+  }
+
+  void _retry() {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _sinDetalles = false;
+    });
+    _fetchOTDetails(widget.ot);
   }
 
   Future<void> _fetchOTDetails(String ot) async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
+    final auth = context.read<AuthProvider>();
+    final authToken = auth.authToken;
+    final sessionCookie = auth.sessionCookie;
+    final routeIdCookie = auth.routeIdCookie;
 
-    final ioClient = IOClient(client);
-    print(ot);
     final apiUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
       '\$expand=ServiceCalls(\$select=Subject,U_PersonWhoReports,Resolution,U_Horometro),'
@@ -65,308 +72,212 @@ class _DetallesLlamadaServicioEquiposState
       '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and EmployeesInfo/EmployeeID eq ServiceCalls/TechnicianCode and ServiceCalls/ServiceCallID eq $ot',
     );
 
+    Map<String, dynamic>? detalles;
+    var sinDetalles = false;
+    String? error;
+
     try {
-      final response = await ioClient.get(
+      final response = await _http.get(
         apiUrl,
         headers: {
-          'Authorization':
-              'Bearer $authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
+      if (!mounted) return;
 
+      // Antes las ramas 401/404/otros estaban dentro del "if 200" y nunca se
+      // ejecutaban: la pantalla se quedaba cargando para siempre.
       if (response.statusCode == 200) {
-        final Map<String, dynamic> decodedResponse = json.decode(response.body);
-        if (decodedResponse['value'] != null &&
-            decodedResponse['value'].isNotEmpty) {
-          setState(() {
-            detallesOT = decodedResponse['value'][0];
-          });
-        } else if (response.statusCode == 401) {
-          final decodedResponse = json.decode(response.body);
-          final error = decodedResponse['error'];
-          if (error['code'] == 301) {
-            // Mostrar el FlutterToast indicando que la sesión ha expirado
-            showToast(
-                'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-            // Redirigir al inicio de sesión
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                  builder: (context) =>
-                      LoginScreen()), // Reemplaza 'LoginPage' con la clase de tu pantalla de inicio de sesión
-            );
-          } else {
-            // Mostrar el AlertDialog con el mensaje de sesión expirada
-            showDialog(
-              context: context,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  title: Text('Sesión expirada'),
-                  content: Text(
-                      'La sesión ha expirado. Por favor, inicia sesión nuevamente.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        // Puedes navegar a la pantalla de inicio de sesión o realizar alguna otra acción
-                        Navigator.pop(context);
-                        Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => LoginScreen()));
-                      },
-                      child: Text('OK'),
-                    ),
-                  ],
-                );
-              },
-            );
-          }
-        } else if (response.statusCode == 404) {
-          // Llamada de servicio no contiene detalles
-          _mostrarDialogoSinDetalles();
+        final decoded = json.decode(response.body);
+        final values = decoded is Map ? decoded['value'] : null;
+        if (values is List &&
+            values.isNotEmpty &&
+            values.first is Map<String, dynamic>) {
+          detalles = values.first as Map<String, dynamic>;
         } else {
-          // Mostrar el AlertDialog con el mensaje de error
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Error en la solicitud'),
-                content: Text('Código de error: ${response.statusCode}'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => LlamadaServiciosEquipos(),
-                        ),
-                      );
-                    },
-                    child: Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
+          sinDetalles = true;
         }
+      } else if (response.statusCode == 401) {
+        // Igual que antes: cualquier 401 (código 301 u otro) lleva al login.
+        _sessionExpired();
+        return;
+      } else if (response.statusCode == 404) {
+        sinDetalles = true;
+      } else {
+        error = 'Error en la solicitud (código ${response.statusCode}).';
       }
+    } on TimeoutException {
+      error = 'El servidor tardó demasiado en responder.\n'
+          'Revisa tu conexión e inténtalo de nuevo.';
     } catch (e) {
-      // Mostrar el AlertDialog con el mensaje de error
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text('Ocurrió un error inesperado: $e'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => LlamadaServiciosEquipos(),
-                    ),
-                  );
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      debugPrint('Error detalle_llamadas_equipos: $e');
+      error = 'No se pudo conectar con el servidor.\n'
+          'Revisa tu conexión e inténtalo de nuevo.';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      detallesOT = detalles;
+      _sinDetalles = sinDetalles;
+      _error = error;
+    });
   }
 
-  Widget _buildDetailCard(String label, String value) {
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
-      ),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-            SizedBox(height: 5),
-            TextField(
-              controller: TextEditingController(text: value),
-              readOnly: true,
-              maxLines: label == 'TRABAJO REALIZADO' ? 2 : 1,
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.all(10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.0),
-                ),
-              ),
-            ),
-          ],
-        ),
+  void _sessionExpired() {
+    final auth = context.read<AuthProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    unawaited(auth.logout());
+    messenger.showSnackBar(
+      const SnackBar(
+        content:
+            Text('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.'),
+        backgroundColor: AppColors.danger,
       ),
     );
   }
 
+  /// Lee detallesOT[grupo][campo] como texto sin lanzar excepciones.
+  String _campo(String grupo, String campo) {
+    final g = detallesOT?[grupo];
+    if (g is! Map) return '';
+    final v = g[campo];
+    return v == null ? '' : v.toString().trim();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
     return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
+      appBar: AppBar(title: const Text('Detalle de OT')),
+      body: SafeArea(child: _buildBody()),
+      bottomNavigationBar: const AppFooter(),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return SingleChildScrollView(
+        child: EmptyState(
+          message: _error!,
+          icon: Icons.cloud_off_outlined,
+          onRetry: _retry,
         ),
-        body: detallesOT != null
-            ? SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
+      );
+    }
+    if (_sinDetalles || detallesOT == null) {
+      return SingleChildScrollView(
+        child: EmptyState(
+          message: 'La llamada de servicio no contiene detalles.',
+          onRetry: _retry,
+        ),
+      );
+    }
+
+    final tecnico = [
+      _campo('EmployeesInfo', 'FirstName'),
+      _campo('EmployeesInfo', 'LastName'),
+    ].where((s) => s.isNotEmpty).join(' ');
+    final tipo = _campo('ServiceCallTypes', 'Name');
+    final resolucion = _campo('ServiceCalls', 'Resolution');
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.orange,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.build_outlined, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Center(
-                        child: Text(
-                          'DETALLE DE OT',
-                          style: TextStyle(fontSize: 40),
-                        ),
-                      ),
-                      SizedBox(
-                        height: 40,
-                      ),
                       Text(
-                        'Número de OT: ${widget.ot}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                        'OT ${widget.ot}',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.dark,
                         ),
                       ),
-                      SizedBox(height: 20),
-                      _buildDetailCard('FALLA',
-                          detallesOT?['ServiceCalls']['Subject'] ?? ''),
-                      _buildDetailCard(
-                          'HORÓMETRO',
-                          detallesOT!['ServiceCalls']['U_Horometro']
-                              .toString()),
-                      _buildDetailCard('PERSONA QUE REPORTA',
-                          detallesOT!['ServiceCalls']['U_PersonWhoReports']),
-                      _buildDetailCard('TÉCNICO',
-                          '${detallesOT!['EmployeesInfo']['FirstName']} ${detallesOT!['EmployeesInfo']['LastName']}'),
-                      _buildDetailCard('TIPO DE SERVICIO',
-                          detallesOT!['ServiceCallTypes']['Name']),
-                      _buildDetailCard('TRABAJO REALIZADO',
-                          detallesOT!['ServiceCalls']['Resolution']),
-                      SizedBox(
-                        height: 20,
-                      ),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          height: 90,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const LlamadaServiciosEquipos(),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              backgroundColor:
-                                  const Color.fromARGB(255, 250, 2, 2),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                side: const BorderSide(
-                                    color: Colors.black, width: 5),
-                              ),
-                            ),
-                            child: const Text(
-                              'REGRESAR',
-                              style:
-                                  TextStyle(fontSize: 20, color: Colors.white),
-                              textAlign: TextAlign.center,
-                            ),
+                      if (tipo.isNotEmpty)
+                        Text(
+                          tipo,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.black54,
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-              )
-            : Center(
-                child: CircularProgressIndicator(),
-              ),
-        bottomNavigationBar: const BottomAppBar(
-          color: Color.fromARGB(255, 29, 29, 27),
-          shape: CircularNotchedRectangle(),
-          child: SizedBox(
-            height: 50,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Copyright ©2023, Todos los Derechos Reservados.',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                  Text(
-                    'Powered by IPL',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
-        ));
-  }
-
-  void _mostrarDialogoSinDetalles() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Llamada de servicio sin detalles"),
-          content: Text("La llamada de servicio no contiene detalles."),
-          actions: <Widget>[
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context)
-                    .pop(); // Esto cerrará el cuadro de diálogo y la pantalla actual
-              },
-              child: Text("OK"),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Column(
+              children: [
+                InfoRow(
+                    label: 'Falla', value: _campo('ServiceCalls', 'Subject')),
+                InfoRow(
+                  label: 'Horómetro',
+                  value: _campo('ServiceCalls', 'U_Horometro'),
+                ),
+                InfoRow(
+                  label: 'Persona que reporta',
+                  value: _campo('ServiceCalls', 'U_PersonWhoReports'),
+                ),
+                InfoRow(label: 'Técnico', value: tecnico),
+                InfoRow(label: 'Tipo de servicio', value: tipo),
+              ],
             ),
-          ],
-        );
-      },
+          ),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Trabajo realizado',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SelectableText(
+                  resolucion.isEmpty ? '—' : resolucion,
+                  style: const TextStyle(fontSize: 15, color: AppColors.dark),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

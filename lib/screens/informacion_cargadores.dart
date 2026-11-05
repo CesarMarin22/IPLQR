@@ -1,254 +1,99 @@
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:proyecto_qr/providers/serial_number.dart';
-import 'package:proyecto_qr/screens/menu_cargadores.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
 import 'package:proyecto_qr/providers/auth_provider.dart';
+import 'package:proyecto_qr/providers/serial_number.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class InformacionCargadores extends StatefulWidget {
   const InformacionCargadores({super.key});
 
   @override
-  _InformacionCargadoresState createState() => _InformacionCargadoresState();
+  State<InformacionCargadores> createState() => _InformacionCargadoresState();
 }
 
 class _InformacionCargadoresState extends State<InformacionCargadores> {
-  final TextEditingController _marcaController = TextEditingController();
-  final TextEditingController _modeloController = TextEditingController();
-  final TextEditingController _serieController = TextEditingController();
-  final TextEditingController _voltajeController = TextEditingController();
-  final TextEditingController _capacidadController = TextEditingController();
-  final TextEditingController _comentariosController = TextEditingController();
-  String authToken = ''; // Token de autenticación
-  String sessionCookie = '';
-  String routeIdCookie = '';
+  static const _timeout = Duration(seconds: 25);
+  static const _sinInfo = 'No Contiene Información';
+
+  late final IOClient _client = IOClient(
+    HttpClient()
+      ..connectionTimeout = _timeout
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) =>
+              true, // Permite certificados autofirmados
+  );
+
+  String _marca = '';
+  String _modelo = '';
+  String _serie = '';
+  String _voltaje = '';
+  String _amperaje = '';
+  String _comentarios = '';
+
+  bool _loading = true;
+  bool _found = false;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    fetchData();
-  }
-
-  void showToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 1,
-      backgroundColor: Colors.black,
-      textColor: Colors.white,
-      fontSize: 16.0,
-    );
-  }
-
-  Future<void> fetchData() async {
-    final numSerie =
-        Provider.of<SerialNumberModel>(context, listen: false).serialNumber;
-    if (numSerie != "" && numSerie.isNotEmpty) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      sessionCookie = authProvider.sessionCookie;
-      routeIdCookie = authProvider.routeIdCookie;
-      authToken = authProvider.authToken;
-
-      await fetchDataFromAPI(numSerie);
-    }
+    _load();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
-    authToken = authProvider.authToken;
-    return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
-        ),
-        body: SingleChildScrollView(
-          // Agregamos SingleChildScrollView aquí
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 30),
-              child: Column(
-                children: [
-                  const Text(
-                    'INFORMACIÓN DE CARGADOR',
-                    style: TextStyle(fontSize: 30),
-                  ),
-                  const SizedBox(
-                    height: 70,
-                  ),
-                  TextField(
-                    controller: _marcaController,
-                    decoration: InputDecoration(
-                      labelText: 'Marca',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _modeloController,
-                    decoration: InputDecoration(
-                      labelText: 'Modelo',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _serieController,
-                    decoration: InputDecoration(
-                      labelText: 'Serie',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _voltajeController,
-                    decoration: InputDecoration(
-                      labelText: 'Voltaje',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _capacidadController,
-                    decoration: InputDecoration(
-                      labelText: 'Amperaje',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    readOnly: true,
-                  ),
-                  const SizedBox(height: 18.0), // Espaciado entre TextField
-                  TextField(
-                    controller: _comentariosController,
-                    maxLines: null,
-                    readOnly: true,
-                    decoration: InputDecoration(
-                      labelText: 'Comentarios',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                    ),
-                    onTap: () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: const Text('Comentarios'),
-                            content: SingleChildScrollView(
-                              child: Text(_comentariosController.text),
-                            ),
-                            actions: <Widget>[
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                },
-                                child: const Text('Cerrar'),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 18.0),
-                  SizedBox(
-                    width: 200,
-                    height: 90,
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => const menuCargadores()));
-                      },
-                      style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
-                          backgroundColor: const Color.fromARGB(255, 250, 2, 2),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              side: const BorderSide(
-                                  color: Colors.black, width: 5))),
-                      child: const Text(
-                        'REGRESAR',
-                        style: TextStyle(fontSize: 20, color: Colors.white),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                  // Espaciado entre TextField
-                ],
-              ),
-            ),
-          ),
-        ),
-        bottomNavigationBar: const BottomAppBar(
-          color: Color.fromARGB(255, 29, 29, 27),
-          shape: CircularNotchedRectangle(),
-          child: SizedBox(
-            height: 50,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Copyright ©2023, Todos los Derechos Reservados.',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                  Text(
-                    'Powered by IPL',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ));
+  void dispose() {
+    _client.close();
+    super.dispose();
+  }
+
+  Future<void> fetchData() => _load(showLoader: true);
+
+  Future<void> _load({bool showLoader = false}) async {
+    final numSerie = context.read<SerialNumberModel>().serialNumber;
+    if (numSerie.isEmpty) {
+      setState(() {
+        _loading = false;
+        _found = false;
+        _error = null;
+      });
+      return;
+    }
+    if (showLoader) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
+    await fetchDataFromAPI(numSerie);
+  }
+
+  void _goToLogin(String message) {
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+    appMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  String _text(dynamic value) {
+    if (value == null) return _sinInfo;
+    final s = value.toString();
+    return s.isEmpty ? _sinInfo : s;
   }
 
   Future<void> fetchDataFromAPI(String numSerie) async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
-
-    final ioClient = IOClient(client);
+    final auth = context.read<AuthProvider>();
+    final authToken = auth.authToken;
+    final sessionCookie = auth.sessionCookie;
+    final routeIdCookie = auth.routeIdCookie;
 
     final apiUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/Items?'
@@ -256,107 +101,67 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
       '\$filter=(ItemsGroupCode eq 437 or AssetGroup eq \'CAR\') and ForeignName eq \'$numSerie\'',
     );
 
+    String? error;
+    bool found = false;
+
     try {
-      final response = await ioClient.get(
+      final response = await _client.get(
         apiUrl,
         headers: {
-          'Authorization':
-              'Bearer $authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final decodedResponse = json.decode(response.body);
-        for (var item in decodedResponse['value']) {
-          if (item != null) {
-            _serieController.text =
-                item['ForeignName'] ?? 'No Contiene Información';
-            _modeloController.text =
-                item['U_ModeloCargador'] ?? 'No Contiene Información';
-            _voltajeController.text =
-                item['U_SalidaVoltaje'] ?? 'No Contiene Información';
-            _capacidadController.text =
-                item['U_Amperaje'] ?? 'No Contiene Información';
-            _comentariosController.text = formatComentarios(
-                item['User_Text'] ?? 'No Contiene Información');
-            _marcaController.text =
-                item['U_MarcaC'] ?? 'No Contiene Información';
+        final decoded = json.decode(response.body);
+        final values = decoded is Map ? decoded['value'] : null;
+        if (values is List) {
+          for (final item in values) {
+            if (item is Map) {
+              found = true;
+              _serie = _text(item['ForeignName']);
+              _modelo = _text(item['U_ModeloCargador']);
+              _voltaje = _text(item['U_SalidaVoltaje']);
+              _amperaje = _text(item['U_Amperaje']);
+              _comentarios = item['User_Text'] == null
+                  ? _sinInfo
+                  : formatComentarios(item['User_Text'].toString());
+              _marca = _text(item['U_MarcaC']);
+            }
           }
         }
       } else if (response.statusCode == 401) {
-        final decodedResponse = json.decode(response.body);
-        final error = decodedResponse['error'];
-        if (error['code'] == 301) {
-          // Mostrar el FlutterToast indicando que la sesión ha expirado
-          showToast(
+        Map? err;
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map && decoded['error'] is Map) err = decoded['error'];
+        } catch (_) {}
+        if (err?['code'] == 301) {
+          _goToLogin(
               'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-          // Redirigir al inicio de sesión
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-                builder: (context) =>
-                    LoginScreen()), // Reemplaza 'LoginPage' con la clase de tu pantalla de inicio de sesión
-          );
-        } else {
-          showDialog(
-            context: context,
-            builder: (BuildContext context) {
-              return AlertDialog(
-                title: Text('Error en la solicitud'),
-                content: Text(
-                    'Código de error: ${error['code']}\nMensaje: ${error['message']['value']}'),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    child: Text('OK'),
-                  ),
-                ],
-              );
-            },
-          );
+          return;
         }
+        final msg = err?['message'] is Map ? err!['message']['value'] : null;
+        error = 'Error en la solicitud.\nCódigo de error: '
+            '${err?['code'] ?? 401}${msg != null ? '\nMensaje: $msg' : ''}';
       } else {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Error en la solicitud'),
-              content: Text('Código de error: ${response.statusCode}'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                  },
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+        error =
+            'Error en la solicitud.\nCódigo de error: ${response.statusCode}';
       }
+    } on TimeoutException {
+      error = 'El servidor tardó demasiado en responder. Intenta de nuevo.';
     } catch (e) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text('Ocurrió un error inesperado: $e'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      error = 'No se pudo obtener la información. Revisa tu conexión.';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      _found = found;
+      _error = error;
+    });
   }
 
   String formatComentarios(String userText) {
@@ -365,7 +170,7 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
 
     for (String line in lines) {
       if (line.trim().isNotEmpty) {
-        // Dividir cada línea en columnas usando espacios
+        // Dividir cada línea en columnas usando tabuladores
         List<String> columns = line.split('\t');
 
         // Agregar sangría a las líneas opcionales
@@ -381,5 +186,115 @@ class _InformacionCargadoresState extends State<InformacionCargadores> {
 
     // Unir todas las líneas formateadas con saltos de línea
     return formattedLines.join('\n');
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return EmptyState(
+        icon: Icons.cloud_off_outlined,
+        message: _error!,
+        onRetry: fetchData,
+      );
+    }
+    if (!_found) {
+      return EmptyState(
+        icon: Icons.search_off,
+        message: 'No se encontró información del cargador.',
+        onRetry: fetchData,
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        children: [
+          const Text(
+            'Información del cargador',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: AppColors.dark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Column(
+                children: [
+                  InfoRow(label: 'Marca', value: _marca),
+                  const Divider(height: 1),
+                  InfoRow(label: 'Modelo', value: _modelo),
+                  const Divider(height: 1),
+                  InfoRow(label: 'Serie', value: _serie),
+                  const Divider(height: 1),
+                  InfoRow(label: 'Voltaje', value: _voltaje),
+                  const Divider(height: 1),
+                  InfoRow(label: 'Amperaje', value: _amperaje),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Comentarios',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SelectableText(
+                    _comentarios.isEmpty ? '—' : _comentarios,
+                    style: const TextStyle(fontSize: 15, color: AppColors.dark),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        toolbarHeight: 76,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(child: _buildBody()),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Regresar'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: const AppFooter(),
+    );
   }
 }

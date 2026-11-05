@@ -1,14 +1,13 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'package:proyecto_qr/models/user.dart';
-import 'dart:io';
-import 'package:http/io_client.dart';
 import 'dart:async';
-import 'package:fluttertoast/fluttertoast.dart';
-import 'package:proyecto_qr/screens/escoger.dart';
-import '../screens/sesion.dart';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
+import 'package:proyecto_qr/models/user.dart';
+import 'package:proyecto_qr/screens/sesion.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class AuthProvider with ChangeNotifier {
   String _sessionCookie = '';
@@ -18,7 +17,7 @@ class AuthProvider with ChangeNotifier {
   int? _userProfileId;
   Timer? _sessionTimer;
   DateTime? _sessionStartTime;
-  int _sessionTimeoutMinutes = 30; // Tiempo de sesión en minutos
+  final int _sessionTimeoutMinutes = 30; // Tiempo de sesión en minutos
 
   int? get userProfileId => _userProfileId;
   String get sessionCookie => _sessionCookie;
@@ -27,284 +26,210 @@ class AuthProvider with ChangeNotifier {
   User? get authenticatedUser => _authenticatedUser;
   DateTime? get sessionStartTime => _sessionStartTime;
   int get sessionTimeoutMinutes => _sessionTimeoutMinutes;
+  bool get isLoggedIn => _sessionCookie.isNotEmpty;
+
   static const apiUri = 'http://68.155.144.63:8081/api/usuarios';
+  static const _sapBase = 'https://68.155.144.63:50000/b1s/v1';
+  static const _timeout = Duration(seconds: 25);
 
-  Future<void> login(
-      String username, String password, BuildContext context) async {
-    final response = await http.get(Uri.parse(apiUri));
-    if (response.statusCode == 200) {
-      final List<dynamic> usuarios = json.decode(response.body);
-      final usuario = usuarios.firstWhere(
-        (user) => user['USUARIO'] == username && user['PWD'] == password,
-        orElse: () => null,
-      );
-      print(usuario);
-      if (usuario == null) {
-        throw UserNotFoundException('Usuario Incorrecto');
-      }
+  IOClient _sapClient() {
+    final client = HttpClient()
+      ..connectionTimeout = _timeout
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+    return IOClient(client);
+  }
 
-      if (usuario['ACTIVO'] != 1) {
-        throw UserNotActiveException('El usuario no está activo');
-      }
+  /// Valida al usuario y abre sesión en SAP B1.
+  /// No navega: la pantalla que llama decide a dónde ir.
+  /// El parámetro [context] se conserva por compatibilidad y no se usa.
+  Future<void> login(String username, String password,
+      [BuildContext? context]) async {
+    final http.Response response;
+    try {
+      response = await http.get(Uri.parse(apiUri)).timeout(_timeout);
+    } on TimeoutException {
+      throw NetworkException('El servidor tardó demasiado en responder.');
+    } catch (_) {
+      throw NetworkException('No se pudo conectar con el servidor.');
+    }
 
-      setUserProfileId(usuario['PERFIL']);
+    if (response.statusCode != 200) {
+      throw NetworkException(
+          'Error del servidor de usuarios (${response.statusCode}).');
+    }
 
-      // Realiza una solicitud de inicio de sesión a la API
-      const apiLoginUrl = 'https://68.155.144.63:50000/b1s/v1/Login';
-      final requestData = {
-        "UserName": "manager",
-        "Password": "yottak01",
-        "CompanyDB": "B1_IPL"
-      };
-
-      // Configura un cliente HTTP personalizado para aceptar certificados autofirmados
-      final client = HttpClient()
-        ..badCertificateCallback =
-            (X509Certificate cert, String host, int port) {
-          return true; // Permite certificados autofirmados
-        };
-
-      // Crea un cliente IOClient con el cliente personalizado
-      final ioClient = IOClient(client);
-
-      try {
-        final loginResponse = await ioClient.post(
-          Uri.parse(apiLoginUrl),
-          headers: {"Content-Type": "application/json"},
-          body: json.encode(requestData),
+    final List<dynamic> usuarios = json.decode(response.body);
+    final usuario = usuarios.cast<Map<String, dynamic>?>().firstWhere(
+          (user) => user?['USUARIO'] == username,
+          orElse: () => null,
         );
 
-        if (loginResponse.statusCode == 200) {
-          final jsonResponse = json.decode(loginResponse.body);
-          _authToken = jsonResponse['SessionId'];
-          final cookies = loginResponse.headers['set-cookie'];
-          final cookiesMap = parseCookies(cookies);
-          _sessionCookie = cookiesMap['B1SESSION']!;
-          _routeIdCookie = cookiesMap['ROUTEID']!;
-          resetSession();
+    if (usuario == null) {
+      throw UserNotFoundException('Usuario incorrecto');
+    }
+    if (usuario['PWD'] != password) {
+      throw InvalidCredentialsException('Contraseña incorrecta');
+    }
+    if (usuario['ACTIVO'] != 1) {
+      throw UserNotActiveException('El usuario no está activo');
+    }
 
-          // Iniciar el temporizador de sesión al iniciar sesión
+    const requestData = {
+      "UserName": "manager",
+      "Password": "yottak01",
+      "CompanyDB": "B1_IPL"
+    };
 
-          if (context != null) {
-            _startSessionTimer(context);
-          }
+    final ioClient = _sapClient();
+    try {
+      final loginResponse = await ioClient
+          .post(
+            Uri.parse('$_sapBase/Login'),
+            headers: {"Content-Type": "application/json"},
+            body: json.encode(requestData),
+          )
+          .timeout(_timeout);
 
-          // Verificar el tipo de perfil y redirigir según corresponda
-          switch (usuario['PERFIL']) {
-            case 1: // Administrador
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => eleccion()),
-              );
-              break;
-            case 2: // Usuario
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => eleccion()),
-              );
-              break;
-            case 3: // Consulta
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => eleccion()),
-              );
-              break;
-            default:
-              // Perfil desconocido, manejar según sea necesario
-              break;
-          }
-          notifyListeners();
-        } else {
-          throw Exception("Error en la respuesta de la API");
-        }
-      } catch (e) {
-        print('Error: $e');
-        ioClient.close();
-        throw Exception('Error en la solicitud a la API');
+      if (loginResponse.statusCode != 200) {
+        throw NetworkException(
+            'SAP rechazó el inicio de sesión (${loginResponse.statusCode}).');
       }
+
+      final jsonResponse = json.decode(loginResponse.body);
+      final cookiesMap = parseCookies(loginResponse.headers['set-cookie']);
+
+      _authToken = jsonResponse['SessionId'] ?? '';
+      _sessionCookie = cookiesMap['B1SESSION'] ?? _authToken;
+      _routeIdCookie = cookiesMap['ROUTEID'] ?? '';
+      _userProfileId = usuario['PERFIL'] as int?;
+
+      _startSessionTimer();
+      notifyListeners();
+    } on NetworkException {
+      rethrow;
+    } on TimeoutException {
+      throw NetworkException('SAP tardó demasiado en responder.');
+    } catch (e) {
+      debugPrint('Error login SAP: $e');
+      throw NetworkException('Error al conectar con SAP.');
+    } finally {
+      ioClient.close();
     }
   }
 
-  void _startSessionTimer(BuildContext context) {
+  void _startSessionTimer() {
+    _sessionTimer?.cancel();
     _sessionStartTime = DateTime.now();
-    _sessionTimer = Timer.periodic(Duration(minutes: 1), (timer) {
-      // Verificar si ha pasado el tiempo de sesión
-      if (_sessionCookie != null &&
-          _routeIdCookie != null &&
-          _sessionStartTime != null) {
-        if (DateTime.now().difference(_sessionStartTime!) >
-            Duration(minutes: _sessionTimeoutMinutes)) {
-          // Si ha pasado el tiempo, cerrar sesión automáticamente
-          logout(context);
-          // Llamar a la función para mostrar la alerta de sesión expirada
-          showSessionExpiredAlert(context);
-        }
+    _sessionTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      final start = _sessionStartTime;
+      if (start == null || !isLoggedIn) return;
+      if (DateTime.now().difference(start) >
+          Duration(minutes: _sessionTimeoutMinutes)) {
+        _expireSession();
       }
     });
   }
 
+  /// Reinicia el contador de expiración (p. ej. ante actividad del usuario).
   void resetSession() {
     _sessionStartTime = DateTime.now();
   }
 
   void cancelSessionTimer() {
     _sessionTimer?.cancel();
+    _sessionTimer = null;
   }
 
-  void logout(BuildContext context) {
-    // Limpia las variables y cancela el temporizador al cerrar sesión
+  void _expireSession() {
+    logout();
+    appMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content: Text('Tu sesión ha expirado. Inicia sesión de nuevo.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+    appNavigatorKey.currentState?.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  /// Cierra la sesión en SAP y limpia los datos locales.
+  /// Devuelve true si SAP confirmó el cierre. No navega.
+  Future<bool> logout([BuildContext? context]) async {
+    final token = _authToken;
+    final session = _sessionCookie;
+    final routeId = _routeIdCookie;
+
     _authenticatedUser = null;
     _sessionCookie = '';
     _routeIdCookie = '';
     _authToken = '';
+    _userProfileId = null;
+    _sessionStartTime = null;
     cancelSessionTimer();
-    resetSession();
-    _logoutFromApi(context);
-    if (context != null) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => LoginScreen()),
-      );
-    }
     notifyListeners();
-  }
 
-  Map<String, String> parseCookies(String? cookies) {
-    final cookieMap = <String, String>{};
-    if (cookies != null) {
-      final cookieParts = cookies.split(';');
-      for (final cookiePart in cookieParts) {
-        if (cookiePart.contains("B1SESSION=")) {
-          final keyValue = cookiePart.trim().split('=');
-          if (keyValue.length == 2) {
-            cookieMap[keyValue[0]] = keyValue[1];
-          }
-        } else if (cookiePart.contains("ROUTEID=")) {
-          final routeIdParts = cookiePart.trim().split(',');
-          for (final part in routeIdParts) {
-            if (part.contains("ROUTEID=")) {
-              final keyValue = part.trim().split('=');
-              if (keyValue.length == 2) {
-                cookieMap[keyValue[0]] = keyValue[1];
-              }
-            }
-          }
-        }
-      }
-    }
-    return cookieMap;
-  }
+    if (session.isEmpty) return true;
 
-  Future<void> _logoutFromApi(BuildContext context) async {
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
-
-    final ioClient = IOClient(client);
-
-    final url = Uri.parse('https://68.155.144.63:50000/b1s/v1/Logout');
-
+    final ioClient = _sapClient();
     try {
-      final response = await ioClient.get(
-        url,
+      final response = await ioClient.post(
+        Uri.parse('$_sapBase/Logout'),
         headers: {
-          'Authorization':
-              'Bearer $_authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$_sessionCookie; ROUTEID=$_routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $token',
+          'Cookie': 'B1SESSION=$session; ROUTEID=$routeId',
         },
-      );
-
-      if (response.statusCode == 204) {
-        _showLogoutSuccessAlertDialog(context);
-      } else {
-        _showLogoutErrorAlertDialog(context, response.statusCode);
-      }
-    } catch (error) {
-      print('Error de red al cerrar sesión. Error: $error');
+      ).timeout(_timeout);
+      return response.statusCode == 204;
+    } catch (e) {
+      debugPrint('Error de red al cerrar sesión: $e');
+      return false;
     } finally {
       ioClient.close();
     }
   }
 
-  void _showLogoutSuccessAlertDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Sesión cerrada exitosamente'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Cierra el diálogo
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showLogoutErrorAlertDialog(BuildContext context, statusCode) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Error al cerrar sesión'),
-          content: Text('Código de error: $statusCode'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context); // Cierra el diálogo
-              },
-              child: Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void showSessionExpiredAlert(BuildContext? context) {
-    if (context != null) {
-      Fluttertoast.showToast(
-        msg: 'Tu sesión ha expirado',
-        gravity: ToastGravity.CENTER,
-        timeInSecForIosWeb: 3,
-        backgroundColor: Colors.red,
-        textColor: Colors.white,
-        fontSize: 16.0,
-      );
-
-      // Después de mostrar la alerta, puedes navegar de regreso a la pantalla de inicio de sesión.
-      Navigator.push(
-          context, MaterialPageRoute(builder: (context) => LoginScreen()));
+  Map<String, String> parseCookies(String? cookies) {
+    final cookieMap = <String, String>{};
+    if (cookies == null) return cookieMap;
+    for (final match
+        in RegExp(r'(B1SESSION|ROUTEID)=([^;,\s]+)').allMatches(cookies)) {
+      cookieMap[match.group(1)!] = match.group(2)!;
     }
+    return cookieMap;
   }
 
   void setUserProfileId(int id) {
-    _userProfileId = id; // Método para establecer el valor del idPerfil
-    notifyListeners(); // Notificar a los escuchadores del cambio
+    _userProfileId = id;
+    notifyListeners();
   }
+
+  @override
+  void dispose() {
+    cancelSessionTimer();
+    super.dispose();
+  }
+}
+
+class NetworkException implements Exception {
+  final String message;
+  NetworkException(this.message);
+  @override
+  String toString() => message;
 }
 
 class UserNotFoundException implements Exception {
   final String message;
-
   UserNotFoundException(this.message);
 }
 
 class InvalidCredentialsException implements Exception {
   final String message;
-
   InvalidCredentialsException(this.message);
 }
 
 class UserNotActiveException implements Exception {
   final String message;
-
   UserNotActiveException(this.message);
 }

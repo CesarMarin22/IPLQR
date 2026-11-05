@@ -1,359 +1,296 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
-import 'dart:convert';
-import 'package:proyecto_qr/providers/serial_number.dart';
-import 'package:proyecto_qr/screens/admin_usuarios.dart';
+import 'package:proyecto_qr/screens/crud.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class crearUsuario extends StatefulWidget {
   final Function? onUsuarioAgregado;
 
   const crearUsuario({Key? key, this.onUsuarioAgregado}) : super(key: key);
   @override
+  // ignore: library_private_types_in_public_api
   _crearUsuarioState createState() => _crearUsuarioState();
 }
 
 class _crearUsuarioState extends State<crearUsuario> {
-  String usuario = '';
-  String pwd = '';
+  final _formKey = GlobalKey<FormState>();
+  final _usuarioController = TextEditingController();
+  final _pwdController = TextEditingController();
+
   String? selectedPerfil;
   String? selectedSocio;
   String? selectedSucursal;
   int selectedActivo = 1; // Por defecto, activo es 1 (activo)
 
-  List<dynamic> perfiles = [];
-  List<dynamic> socios = [];
+  List<MapEntry<String, String>> perfiles = const [];
+  List<MapEntry<String, String>> socios = const [];
 
-  List<Map<String, String>> sucursales = [
-    {'nombre': 'AGS', 'codigo': '87'},
-    {'nombre': 'CLY', 'codigo': '82'},
-    {'nombre': 'GDL', 'codigo': '88'},
-    {'nombre': 'IRA', 'codigo': '89'},
-    {'nombre': 'MEX', 'codigo': '83'},
-    {'nombre': 'MTY', 'codigo': '85'},
-    {'nombre': 'QRO', 'codigo': '86'},
-    {'nombre': 'SLP', 'codigo': '90'},
-    {'nombre': 'TOL', 'codigo': '84'},
-    {'nombre': 'PUE', 'codigo': '374'},
-  ];
+  bool _cargandoCatalogos = true;
+  String? _errorCatalogos;
+  bool _guardando = false;
+  bool _verPwd = false;
+
+  /// Fuerza la reconstrucción de los dropdowns cuando llega el catálogo.
+  int _formVersion = 0;
 
   @override
   void initState() {
     super.initState();
-    // Obtener los perfiles disponibles
-    obtenerPerfiles();
-    // Obtener los socios disponibles
-    obtenerSocios();
+    _cargarCatalogos();
   }
 
-  Future<void> obtenerPerfiles() async {
-    http.Response response =
-        await http.get(Uri.parse('http://68.155.144.63:8081/api/perfiles'));
-    if (response.statusCode == 200) {
+  @override
+  void dispose() {
+    _usuarioController.dispose();
+    _pwdController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _cargarCatalogos() async {
+    setState(() {
+      _cargandoCatalogos = true;
+      _errorCatalogos = null;
+    });
+    try {
+      final results = await Future.wait([obtenerPerfiles(), obtenerSocios()]);
+      if (!mounted) return;
       setState(() {
-        perfiles = jsonDecode(response.body);
-        selectedPerfil =
-            perfiles.isNotEmpty ? perfiles[0]['ID'].toString() : null;
+        perfiles = results[0];
+        socios = results[1];
+        // Igual que antes: por defecto se elige el primer perfil / socio.
+        selectedPerfil ??= perfiles.isNotEmpty ? perfiles.first.key : null;
+        selectedSocio ??= socios.isNotEmpty ? socios.first.key : null;
+        _cargandoCatalogos = false;
+        _formVersion++;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _cargandoCatalogos = false;
+        _errorCatalogos = mensajeErrorUsuarios(e);
       });
     }
   }
 
-  Future<void> obtenerSocios() async {
-    http.Response response =
-        await http.get(Uri.parse('http://68.155.144.63:8081/api/socios'));
-    if (response.statusCode == 200) {
-      setState(() {
-        socios = jsonDecode(response.body);
-        selectedSocio = socios.isNotEmpty ? socios[0]['ID'].toString() : null;
-      });
+  Future<List<MapEntry<String, String>>> obtenerPerfiles() async {
+    final response = await http
+        .get(Uri.parse('http://68.155.144.63:8081/api/perfiles'))
+        .timeout(kUsuariosTimeout);
+    if (response.statusCode != 200) {
+      throw UsuariosApiException(
+          'Error al cargar perfiles: ${response.statusCode}');
     }
+    return opcionesCatalogo(decodificarListaJson(response), 'PERFIL');
+  }
+
+  Future<List<MapEntry<String, String>>> obtenerSocios() async {
+    final response = await http
+        .get(Uri.parse('http://68.155.144.63:8081/api/socios'))
+        .timeout(kUsuariosTimeout);
+    if (response.statusCode != 200) {
+      throw UsuariosApiException(
+          'Error al cargar socios: ${response.statusCode}');
+    }
+    return opcionesCatalogo(decodificarListaJson(response), 'SOCIO');
   }
 
   Future<void> agregarUsuario() async {
+    if (_guardando) return;
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    FocusScope.of(context).unfocus();
+    final messenger = ScaffoldMessenger.of(context);
+
     // Construir el cuerpo de la solicitud
-    Map<String, dynamic> body = {
-      'USUARIO': usuario,
-      'PWD': pwd,
+    final Map<String, dynamic> body = {
+      'USUARIO': _usuarioController.text.trim(),
+      'PWD': _pwdController.text,
       'PERFIL': selectedPerfil,
       'SOCIO': selectedSocio,
       'ACTIVO': selectedActivo,
       'SUCURSAL': selectedSucursal,
     };
 
-    // Realizar la solicitud POST para agregar el usuario
-    http.Response response = await http.post(
-      Uri.parse('http://68.155.144.63:8081/api/usuarios'),
-      body: jsonEncode(body),
-      headers: {'Content-Type': 'application/json'},
-    );
+    setState(() => _guardando = true);
+    try {
+      // Realizar la solicitud POST para agregar el usuario
+      final response = await http
+          .post(
+            Uri.parse('http://68.155.144.63:8081/api/usuarios'),
+            body: jsonEncode(body),
+            headers: {'Content-Type': 'application/json'},
+          )
+          .timeout(kUsuariosTimeout);
 
-    if (response.statusCode == 200) {
-      // Usuario agregado correctamente
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Usuario agregado')));
-      if (widget.onUsuarioAgregado != null) {
-        widget.onUsuarioAgregado!();
+      if (response.statusCode == 200) {
+        messenger
+            .showSnackBar(const SnackBar(content: Text('Usuario agregado')));
+        final cb = widget.onUsuarioAgregado;
+        if (cb != null) cb();
+        if (mounted) Navigator.of(context).pop(true);
+        return;
       }
-      Navigator.pop(context); // Volver a la pantalla anterior
-    } else {
-      // Error al agregar el usuario
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error al agregar el usuario')));
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text('Error al agregar el usuario: ${response.statusCode}')));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text('Error al agregar el usuario. ${mensajeErrorUsuarios(e)}')));
     }
+    if (mounted) setState(() => _guardando = false);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final puedeGuardar = !_guardando && !_cargandoCatalogos;
+
+    return PopScope(
+      canPop: !_guardando,
+      child: Scaffold(
         appBar: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
+          toolbarHeight: 76,
+          automaticallyImplyLeading: !_guardando,
+          title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
         ),
-        body: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 30),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'CREAR USUARIO',
-                        style: TextStyle(fontSize: 40),
-                      ),
-                      const SizedBox(
-                        height: 5,
-                      ),
-                    ],
-                  ),
+                const EncabezadoUsuarios(
+                  titulo: 'Crear usuario',
+                  subtitulo: 'Captura los datos del nuevo usuario',
                 ),
-                TextField(
-                  onChanged: (value) {
-                    setState(() {
-                      usuario = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                      labelText: 'Usuario',
-                      labelStyle:
-                          const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
-                          color: Color.fromARGB(255, 243, 138, 0),
-                        ),
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10.0),
-                          borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 243, 138, 0)))),
-                ),
-                SizedBox(height: 10),
-                TextField(
-                  onChanged: (value) {
-                    setState(() {
-                      pwd = value;
-                    });
-                  },
-                  decoration: InputDecoration(
-                      labelText: 'Contraseña',
-                      labelStyle:
-                          const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
-                          color: Color.fromARGB(255, 243, 138, 0),
-                        ),
-                        borderRadius: BorderRadius.circular(10.0),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10.0),
-                          borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 243, 138, 0)))),
-                ),
-                SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: selectedSucursal,
-                  onChanged: (newValue) {
-                    setState(() {
-                      selectedSucursal = newValue;
-                    });
-                  },
-                  items: sucursales.map((sucursal) {
-                    return DropdownMenuItem<String>(
-                      value: sucursal['codigo'], // lo que se enviará
-                      child: Text(sucursal['nombre']!), // lo que se mostrará
-                    );
-                  }).toList(),
-                  decoration: InputDecoration(
-                    labelText: 'Sucursal',
-                    labelStyle:
-                        const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-                    focusedBorder: OutlineInputBorder(
-                      borderSide: const BorderSide(
-                          color: Color.fromARGB(255, 243, 138, 0)),
-                      borderRadius: BorderRadius.circular(10.0),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10.0),
-                      borderSide: const BorderSide(
-                          color: Color.fromARGB(255, 243, 138, 0)),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                    value: selectedPerfil,
-                    onChanged: (newValue) {
-                      setState(() {
-                        selectedPerfil = newValue;
-                      });
-                    },
-                    items: perfiles.map<DropdownMenuItem<String>>((perfil) {
-                      return DropdownMenuItem<String>(
-                        value: perfil['ID'].toString(),
-                        child: Text(perfil['PERFIL']),
-                      );
-                    }).toList(),
-                    decoration: InputDecoration(
-                        labelText: 'Perfil',
-                        labelStyle: const TextStyle(
-                            color: Color.fromARGB(255, 0, 0, 0)),
-                        focusedBorder: OutlineInputBorder(
-                          borderSide: const BorderSide(
-                            color: Color.fromARGB(255, 243, 138, 0),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (_errorCatalogos != null)
+                            AvisoCatalogos(
+                              mensaje: _errorCatalogos!,
+                              onRetry: _cargarCatalogos,
+                            ),
+                          TextFormField(
+                            controller: _usuarioController,
+                            enabled: !_guardando,
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            decoration: const InputDecoration(
+                              labelText: 'Usuario',
+                              prefixIcon: Icon(Icons.person_outline),
+                            ),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Escribe el usuario'
+                                : null,
                           ),
-                          borderRadius: BorderRadius.circular(10.0),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10.0),
-                            borderSide: const BorderSide(
-                                color: Color.fromARGB(255, 243, 138, 0))))),
-                SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  value: selectedSocio,
-                  onChanged: (newValue) {
-                    setState(() {
-                      selectedSocio = newValue;
-                    });
-                  },
-                  items: socios.map<DropdownMenuItem<String>>((socio) {
-                    return DropdownMenuItem<String>(
-                      value: socio['ID'].toString(),
-                      child: Text(socio['SOCIO']),
-                    );
-                  }).toList(),
-                  decoration: InputDecoration(
-                      labelText: 'Socio',
-                      labelStyle:
-                          const TextStyle(color: Color.fromARGB(255, 0, 0, 0)),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(
-                          color: Color.fromARGB(255, 243, 138, 0),
-                        ),
-                        borderRadius: BorderRadius.circular(10.0),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _pwdController,
+                            enabled: !_guardando,
+                            obscureText: !_verPwd,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            decoration: InputDecoration(
+                              labelText: 'Contraseña',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              suffixIcon: IconButton(
+                                tooltip: _verPwd
+                                    ? 'Ocultar contraseña'
+                                    : 'Mostrar contraseña',
+                                icon: Icon(_verPwd
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined),
+                                onPressed: () =>
+                                    setState(() => _verPwd = !_verPwd),
+                              ),
+                            ),
+                            validator: (v) => (v == null || v.isEmpty)
+                                ? 'Escribe la contraseña'
+                                : null,
+                          ),
+                          const SizedBox(height: 14),
+                          CampoCatalogo(
+                            label: 'Sucursal',
+                            icon: Icons.store_mall_directory_outlined,
+                            value: selectedSucursal,
+                            opciones: opcionesSucursal,
+                            onChanged: _guardando
+                                ? null
+                                : (v) => setState(() => selectedSucursal = v),
+                          ),
+                          const SizedBox(height: 14),
+                          CampoCatalogo(
+                            key: ValueKey('perfil-$_formVersion'),
+                            label: 'Perfil',
+                            icon: Icons.badge_outlined,
+                            value: selectedPerfil,
+                            opciones: perfiles,
+                            cargando: _cargandoCatalogos,
+                            onChanged: _guardando
+                                ? null
+                                : (v) => setState(() => selectedPerfil = v),
+                          ),
+                          const SizedBox(height: 14),
+                          CampoCatalogo(
+                            key: ValueKey('socio-$_formVersion'),
+                            label: 'Socio',
+                            icon: Icons.business_outlined,
+                            value: selectedSocio,
+                            opciones: socios,
+                            cargando: _cargandoCatalogos,
+                            onChanged: _guardando
+                                ? null
+                                : (v) => setState(() => selectedSocio = v),
+                          ),
+                          const SizedBox(height: 6),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Activo'),
+                            subtitle: Text(selectedActivo == 1
+                                ? 'El usuario podrá iniciar sesión'
+                                : 'El usuario se creará desactivado'),
+                            value: selectedActivo == 1,
+                            onChanged: _guardando
+                                ? null
+                                : (value) => setState(
+                                    () => selectedActivo = value ? 1 : 0),
+                          ),
+                        ],
                       ),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10.0),
-                          borderSide: const BorderSide(
-                              color: Color.fromARGB(255, 243, 138, 0)))),
-                ),
-                SizedBox(height: 10),
-                Row(
-                  children: [
-                    Text('Activo:'),
-                    Switch(
-                      value: selectedActivo == 1,
-                      activeColor: Color.fromARGB(255, 243, 138, 0),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedActivo = value ? 1 : 0;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: usuario.isNotEmpty && pwd.isNotEmpty
-                      ? agregarUsuario
-                      : null,
-                  child: Text(
-                    'Agregar Usuario',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                  style: ButtonStyle(
-                    backgroundColor: MaterialStateProperty.all<Color>(
-                      usuario.isNotEmpty && pwd.isNotEmpty
-                          ? Color.fromARGB(255, 243, 138, 0)
-                          : Colors.grey,
                     ),
                   ),
                 ),
-                SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: () {
-                    // Resetear el número de serie al hacer clic en "SCANEAR"
-                    Provider.of<SerialNumberModel>(context, listen: false)
-                        .setSerialNumber('');
-
-                    // Navegar a la pantalla de escaneo (eleccion)
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const AdminUsuarios(),
-                      ),
-                    );
-                  },
-                  child: Text(
-                    'REGRESAR',
-                    style: TextStyle(color: Colors.black),
-                  ),
-                  style: ButtonStyle(
-                    backgroundColor: MaterialStateProperty.all<Color>(
-                        Colors.red), // Color de fondo del botón
-                  ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: puedeGuardar ? agregarUsuario : null,
+                  icon: _guardando
+                      ? const BotonSpinner()
+                      : const Icon(Icons.person_add_alt_1_outlined),
+                  label:
+                      Text(_guardando ? 'Guardando...' : 'Agregar usuario'),
+                ),
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  onPressed:
+                      _guardando ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.arrow_back),
+                  label: const Text('Regresar'),
                 ),
               ],
             ),
           ),
         ),
-        bottomNavigationBar: const BottomAppBar(
-          color: Color.fromARGB(255, 29, 29, 27),
-          shape: CircularNotchedRectangle(),
-          child: SizedBox(
-            height: 50,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Copyright ©2023, Todos los Derechos Reservados.',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                  Text(
-                    'Powered by IPL',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ));
+        bottomNavigationBar: const AppFooter(),
+      ),
+    );
   }
 }

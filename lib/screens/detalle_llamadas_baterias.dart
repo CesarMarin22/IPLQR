@@ -1,29 +1,43 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:proyecto_qr/screens/llamadas_servicio_baterias.dart';
-import 'package:proyecto_qr/providers/auth_provider.dart';
-import 'package:provider/provider.dart';
 import 'dart:io';
+
+import 'package:flutter/material.dart';
 import 'package:http/io_client.dart';
+import 'package:provider/provider.dart';
+import 'package:proyecto_qr/providers/auth_provider.dart';
 import 'package:proyecto_qr/screens/sesion.dart';
-import 'package:fluttertoast/fluttertoast.dart';
+import 'package:proyecto_qr/theme/app_theme.dart';
 
 class DetallesLlamadaServicioBaterias extends StatefulWidget {
   final String ot;
 
-  DetallesLlamadaServicioBaterias({required this.ot});
+  const DetallesLlamadaServicioBaterias({super.key, required this.ot});
 
   @override
-  _DetallesLlamadaServicioBateriasState createState() =>
+  State<DetallesLlamadaServicioBaterias> createState() =>
       _DetallesLlamadaServicioBateriasState();
 }
 
 class _DetallesLlamadaServicioBateriasState
     extends State<DetallesLlamadaServicioBaterias> {
-  Map<String, dynamic>? detallesOT;
+  static const _sinDato = '(no se proporcionó el dato)';
+  static const _timeout = Duration(seconds: 25);
+
+  late final IOClient _ioClient = IOClient(
+    HttpClient()
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true,
+  );
+
+  Map<String, dynamic>? detallesOT; // Almacena los detalles de la OT
   String authToken = ''; // Token de autenticación
   String sessionCookie = '';
-  String routeIdCookie = ''; // Almacena los detalles de la OT
+  String routeIdCookie = '';
+
+  bool _loading = true;
+  String? _error;
+  bool _sinDetalles = false;
 
   @override
   void initState() {
@@ -32,31 +46,42 @@ class _DetallesLlamadaServicioBateriasState
     _fetchOTDetails(widget.ot);
   }
 
-  void showToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 1,
-      backgroundColor: Colors.black,
-      textColor: Colors.white,
-      fontSize: 16.0,
+  @override
+  void dispose() {
+    _ioClient.close();
+    super.dispose();
+  }
+
+  Future<void> _retry() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _sinDetalles = false;
+    });
+    await _fetchOTDetails(widget.ot);
+  }
+
+  void _goToLogin() {
+    if (!mounted) return;
+    appMessengerKey.currentState?.showSnackBar(
+      const SnackBar(
+        content:
+            Text('Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.'),
+        backgroundColor: AppColors.danger,
+      ),
+    );
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (r) => false,
     );
   }
 
   Future<void> _fetchOTDetails(String ot) async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = context.read<AuthProvider>();
     sessionCookie = authProvider.sessionCookie;
     routeIdCookie = authProvider.routeIdCookie;
     authToken = authProvider.authToken;
-    final client = HttpClient();
-    client.badCertificateCallback =
-        (X509Certificate cert, String host, int port) {
-      return true; // Permite certificados autofirmados
-    };
 
-    final ioClient = IOClient(client);
-    print(ot);
     final apiUrl = Uri.parse(
       'https://68.155.144.63:50000/b1s/v1/\$crossjoin(ServiceCalls,ServiceCallTypes,EmployeesInfo)?'
       '\$expand=ServiceCalls(\$select=Subject,U_PersonWhoReports,Resolution),'
@@ -65,304 +90,216 @@ class _DetallesLlamadaServicioBateriasState
       '\$filter=ServiceCalls/CallType eq ServiceCallTypes/CallTypeID and EmployeesInfo/EmployeeID eq ServiceCalls/TechnicianCode and ServiceCalls/ServiceCallID eq $ot',
     );
 
+    Map<String, dynamic>? detalles;
+    String? error;
+    bool sinDetalles = false;
+
     try {
-      final response = await ioClient.get(
+      final response = await _ioClient.get(
         apiUrl,
         headers: {
-          'Authorization':
-              'Bearer $authToken', // Incluye el token de autenticación
-          'Cookie':
-              'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie', // Agrega las cookies a la solicitud
+          'Authorization': 'Bearer $authToken',
+          'Cookie': 'B1SESSION=$sessionCookie; ROUTEID=$routeIdCookie',
         },
-      );
+      ).timeout(_timeout);
+
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> decodedResponse = json.decode(response.body);
-        if (decodedResponse['value'] != null &&
-            decodedResponse['value'].isNotEmpty) {
-          setState(() {
-            detallesOT = decodedResponse['value'][0];
-          });
-        } else if (response.statusCode == 401) {
-          final decodedResponse = json.decode(response.body);
-          final error = decodedResponse['error'];
-          if (error['code'] == 301) {
-            // Mostrar el FlutterToast indicando que la sesión ha expirado
-            showToast(
-                'Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.');
-            // Redirigir al inicio de sesión
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                  builder: (context) =>
-                      LoginScreen()), // Reemplaza 'LoginPage' con la clase de tu pantalla de inicio de sesión
-            );
-          } else {
-            // Mostrar el AlertDialog con el mensaje de sesión expirada
-            showDialog(
-              context: context,
-              builder: (BuildContext context) {
-                return AlertDialog(
-                  title: Text('Sesión expirada'),
-                  content: Text(
-                      'La sesión ha expirado. Por favor, inicia sesión nuevamente.'),
-                  actions: [
-                    TextButton(
-                      onPressed: () {
-                        // Puedes navegar a la pantalla de inicio de sesión o realizar alguna otra acción
-                        Navigator.pop(context);
-                        Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(
-                                builder: (context) => LoginScreen()));
-                      },
-                      child: Text('OK'),
-                    ),
-                  ],
-                );
-              },
-            );
-          }
+        final decoded = json.decode(response.body);
+        final values = decoded is Map ? decoded['value'] : null;
+        if (values is List && values.isNotEmpty && values.first is Map) {
+          detalles = Map<String, dynamic>.from(values.first as Map);
+        } else {
+          // Antes se quedaba cargando para siempre en este caso.
+          sinDetalles = true;
         }
+      } else if (response.statusCode == 401) {
+        // Antes este bloque estaba dentro del caso 200 y nunca se ejecutaba.
+        // Igual que la lógica original: con código 301 o cualquier otro 401
+        // se considera la sesión expirada y se vuelve al login.
+        _goToLogin();
+        return;
       } else if (response.statusCode == 404) {
         // Llamada de servicio no contiene detalles
-        _mostrarDialogoSinDetalles();
+        sinDetalles = true;
       } else {
-        // Mostrar el AlertDialog con el mensaje de error
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              title: Text('Error en la solicitud'),
-              content: Text('Código de error: ${response.statusCode}'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => LlamadaServiciosBaterias(),
-                      ),
-                    );
-                  },
-                  child: Text('OK'),
-                ),
-              ],
-            );
-          },
-        );
+        error =
+            'Error en la solicitud.\nCódigo de error: ${response.statusCode}';
       }
+    } on TimeoutException {
+      error = 'El servidor tardó demasiado en responder. Intenta de nuevo.';
+    } on SocketException {
+      error = 'No se pudo conectar con el servidor. Revisa tu conexión.';
     } catch (e) {
-      showDialog(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: Text('Error'),
-            content: Text('Ocurrió un error inesperado: $e'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => LlamadaServiciosBaterias(),
-                    ),
-                  );
-                },
-                child: Text('OK'),
-              ),
-            ],
-          );
-        },
-      );
+      error = 'Ocurrió un error inesperado: $e';
     }
+
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      detallesOT = detalles;
+      _error = error;
+      _sinDetalles = sinDetalles;
+    });
   }
 
-  Widget _buildDetailCard(String label, String? value) {
-    String displayValue = value ?? "(no se proporcionó el dato)";
-    return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10.0),
-      ),
-      elevation: 3,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey,
-              ),
-            ),
-            SizedBox(height: 5),
-            TextField(
-              controller: TextEditingController(text: displayValue),
-              readOnly: true,
-              maxLines: label == 'TRABAJO REALIZADO' ? 2 : 1,
-              decoration: InputDecoration(
-                contentPadding: EdgeInsets.all(10),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10.0),
-                ),
-              ),
-            ),
-          ],
+  String _field(String entity, String key) {
+    final obj = detallesOT?[entity];
+    if (obj is! Map) return _sinDato;
+    final value = obj[key];
+    if (value == null || value.toString().trim().isEmpty) return _sinDato;
+    return value.toString();
+  }
+
+  String _tecnico() {
+    final emp = detallesOT?['EmployeesInfo'];
+    if (emp is! Map) return _sinDato;
+    final nombre = [emp['FirstName'], emp['LastName']]
+        .where((v) => v != null && v.toString().trim().isNotEmpty)
+        .join(' ');
+    return nombre.isEmpty ? _sinDato : nombre;
+  }
+
+  Widget _backButton() {
+    return OutlinedButton.icon(
+      // Regresa a la lista de la que se vino (antes abría siempre la lista de
+      // baterías, aun viniendo de cargadores, y apilaba pantallas).
+      onPressed: () => Navigator.of(context).maybePop(),
+      icon: const Icon(Icons.arrow_back),
+      label: const Text('Regresar'),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_sinDetalles || _error != null || detallesOT == null) {
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 24),
+          EmptyState(
+            message: _error ??
+                'Llamada de servicio sin detalles.\n'
+                    'La llamada de servicio no contiene detalles.',
+            icon: _error != null ? Icons.error_outline : Icons.inbox_outlined,
+            onRetry: _error != null ? _retry : null,
+          ),
+          _backButton(),
+        ],
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+      children: [
+        const Text(
+          'Detalle de OT',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: AppColors.dark,
+          ),
         ),
-      ),
+        const SizedBox(height: 4),
+        Text(
+          'Número de OT: ${widget.ot}',
+          style: const TextStyle(fontSize: 15, color: Colors.black54),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Column(
+              children: [
+                InfoRow(
+                  label: 'Tipo de servicio',
+                  value: _field('ServiceCallTypes', 'Name'),
+                ),
+                InfoRow(label: 'Técnico', value: _tecnico()),
+                InfoRow(
+                  label: 'Persona que reporta',
+                  value: _field('ServiceCalls', 'U_PersonWhoReports'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _TextBlock(
+          icon: Icons.report_problem_outlined,
+          label: 'Falla',
+          value: _field('ServiceCalls', 'Subject'),
+        ),
+        const SizedBox(height: 8),
+        _TextBlock(
+          icon: Icons.build_outlined,
+          label: 'Trabajo realizado',
+          value: _field('ServiceCalls', 'Resolution'),
+        ),
+        const SizedBox(height: 20),
+        _backButton(),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
-    sessionCookie = authProvider.sessionCookie;
-    routeIdCookie = authProvider.routeIdCookie;
-    authToken = authProvider.authToken;
     return Scaffold(
-        appBar: AppBar(
-          automaticallyImplyLeading: false,
-          backgroundColor: const Color.fromARGB(255, 243, 138, 0),
-          toolbarHeight: 80,
-          title: Center(
-            child: Image.asset(
-              'assets/logo ipl_BLANCO.png',
-              width: 70,
-              height: 70,
-            ),
-          ),
-        ),
-        body: detallesOT != null
-            ? SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Text(
-                          'DETALLE DE OT',
-                          style: TextStyle(fontSize: 40),
-                        ),
-                      ),
-                      SizedBox(
-                        height: 40,
-                      ),
-                      Text(
-                        'Número de OT: ${widget.ot}',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 20),
-                      _buildDetailCard('FALLA',
-                          detallesOT?['ServiceCalls']['Subject'] ?? ''),
-                      _buildDetailCard('PERSONA QUE REPORTA',
-                          detallesOT!['ServiceCalls']['U_PersonWhoReports']),
-                      _buildDetailCard('TÉCNICO',
-                          '${detallesOT!['EmployeesInfo']['FirstName']} ${detallesOT!['EmployeesInfo']['LastName']}'),
-                      _buildDetailCard('TIPO DE SERVICIO',
-                          detallesOT!['ServiceCallTypes']['Name']),
-                      _buildDetailCard('TRABAJO REALIZADO',
-                          detallesOT!['ServiceCalls']['Resolution']),
-                      SizedBox(
-                        height: 20,
-                      ),
-                      Center(
-                        child: SizedBox(
-                          width: 200,
-                          height: 90,
-                          child: ElevatedButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const LlamadaServiciosBaterias(),
-                                ),
-                              );
-                            },
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              backgroundColor:
-                                  const Color.fromARGB(255, 250, 2, 2),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                side: const BorderSide(
-                                    color: Colors.black, width: 5),
-                              ),
-                            ),
-                            child: const Text(
-                              'REGRESAR',
-                              style:
-                                  TextStyle(fontSize: 20, color: Colors.white),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+      appBar: AppBar(
+        toolbarHeight: 76,
+        title: Image.asset('assets/logo ipl_BLANCO.png', height: 58),
+      ),
+      body: SafeArea(child: _buildBody()),
+      bottomNavigationBar: const AppFooter(),
+    );
+  }
+}
+
+/// Bloque de texto largo (falla / trabajo realizado) con etiqueta arriba.
+class _TextBlock extends StatelessWidget {
+  const _TextBlock({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 20, color: AppColors.orangeDark),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.dark,
                   ),
                 ),
-              )
-            : Center(
-                child: CircularProgressIndicator(),
-              ),
-        bottomNavigationBar: const BottomAppBar(
-          color: Color.fromARGB(255, 29, 29, 27),
-          shape: CircularNotchedRectangle(),
-          child: SizedBox(
-            height: 50,
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Copyright ©2023, Todos los Derechos Reservados.',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                  Text(
-                    'Powered by IPL',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w300,
-                        fontSize: 12.0,
-                        color: Color.fromARGB(255, 255, 255, 255)),
-                  ),
-                ],
-              ),
+              ],
             ),
-          ),
-        ));
-  }
-
-  void _mostrarDialogoSinDetalles() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text("Llamada de servicio sin detalles"),
-          content: Text("La llamada de servicio no contiene detalles."),
-          actions: <Widget>[
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context)
-                    .pop(); // Esto cerrará el cuadro de diálogo y la pantalla actual
-              },
-              child: Text("OK"),
+            const SizedBox(height: 10),
+            SelectableText(
+              value,
+              style: const TextStyle(fontSize: 14, height: 1.4),
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
   }
 }
